@@ -121,7 +121,7 @@ char leer_bit(unsigned int nbloque) {
   unsigned int nbloqueabs = sb.posPrimerBloqueMB + nbloqueMB;
   unsigned int posbyte = posbyteMB % BLOCKSIZE;
   unsigned char bufferMB[BLOCKSIZE];
-  if (bread(nbloqueabs, bufferMB))
+  if (bread(nbloqueabs, bufferMB) == -1)
     return FALLO;
   unsigned char mascara = 128;
   mascara >>= posbit;
