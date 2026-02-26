@@ -1,0 +1,46 @@
+DATOS DEL SUPERBLOQUE
+posPrimerBloqueMB = 1
+posUltimoBloqueMB = 13
+posPrimerBloqueAI = 14
+posUltimoBloqueAI = 3138
+posPrimerBloqueDatos = 3139
+posUltimoBloqueDatos = 99999
+posInodoRaiz = 0
+posPrimerInodoLibre = 1
+cantBloquesLibres = 96861
+cantInodosLibres = 24999
+totBloques = 100000
+totInodos = 25000
+
+RESERVAMOS UN BLOQUE Y LUEGO LO LIBERAMOS
+Se ha reservado el bloque físico nº 3139 que era el 1º libre indicado por el MB
+SB.cantBloquesLibres = 96860
+Liberamos ese bloque y después SB.cantBloquesLibres = 96860
+
+MAPA DE BITS CON BLOQUES DE METADATOS OCUPADOS
+[leer_bit(0)→ posbyteMB:0, posbyte:0, posbit:0, nbloqueMB:0, nbloqueabs:1)]
+posSB: 0 → leer_bit(0) = -1
+[leer_bit(1)→ posbyteMB:0, posbyte:0, posbit:1, nbloqueMB:0, nbloqueabs:1)]
+SB.posPrimerBloqueMB: 1 → leer_bit(1) = -1
+[leer_bit(13)→ posbyteMB:1, posbyte:1, posbit:5, nbloqueMB:0, nbloqueabs:1)]
+SB.posUltimoBloqueMB: 13 → leer_bit(13) = -1
+[leer_bit(1)→ posbyteMB:0, posbyte:0, posbit:1, nbloqueMB:0, nbloqueabs:1)]
+SB.posPrimerBloqueAI: 1 → leer_bit(1) = -1
+[leer_bit(3138)→ posbyteMB:392, posbyte:392, posbit:2, nbloqueMB:0, nbloqueabs:1)]
+SB.posUltimoBloqueAI: 3138 → leer_bit(3138) = -1
+[leer_bit(3139)→ posbyteMB:392, posbyte:392, posbit:3, nbloqueMB:0, nbloqueabs:1)]
+SB.posPrimerBloqueDatos: 3139 → leer_bit(3139) = -1
+[leer_bit(99999)→ posbyteMB:12499, posbyte:211, posbit:7, nbloqueMB:12, nbloqueabs:13)]
+SB.posUltimoBloqueDatos: 99999 → leer_bit(99999) = -1
+
+DATOS DEL DIRECTORIO RAIZ
+tipo: d
+permisos: 7
+atime: Thu 2026-02-26 17:47:46
+mtime: Thu 2026-02-26 17:47:46
+ctime: Thu 2026-02-26 17:47:46
+btime: Thu 2026-02-26 17:47:46
+nlinks: 1
+tamEnBytesLog: 0
+numBloquesOcupados: 0
+Cerrando archivo...
