@@ -1,5 +1,4 @@
 #include "ficheros_basico.h"
-#include <string.h>
 int tamMB(unsigned int nbloques) {
 
   int nbytes = nbloques / 8;
@@ -203,4 +202,61 @@ int escribir_inodo(unsigned int ninodo, struct inodo *inodo) {
   struct superbloque sb;
   if (bread(posSB, &sb) == -1)
     return FALLO;
+  unsigned int nbloqueAI = (ninodo * INODOSIZE) / BLOCKSIZE;
+  unsigned int nbloqueabs = nbloqueAI + sb.posPrimerBloqueAI;
+  struct inodo inodos[BLOCKSIZE / INODOSIZE];
+  if (bread(nbloqueabs, inodos) == -1)
+    return FALLO;
+  unsigned int posinodo = ninodo % (BLOCKSIZE / INODOSIZE);
+  inodos[posinodo] = *inodo;
+  return bwrite(nbloqueabs, inodos);
+}
+int leer_inodo(unsigned int ninodo, struct inodo *inodo) {
+  struct superbloque sb;
+  if (bread(posSB, &sb) == -1)
+    return FALLO;
+  unsigned int nbloqueAI = (ninodo * INODOSIZE) / BLOCKSIZE;
+  unsigned int nbloqueabs = nbloqueAI + sb.posPrimerBloqueAI;
+  struct inodo inodos[BLOCKSIZE / INODOSIZE];
+  if (bread(nbloqueabs, inodos) == -1)
+    return FALLO;
+  unsigned int posinodo = ninodo % (BLOCKSIZE / INODOSIZE);
+  *inodo = inodos[posinodo];
+  return EXITO;
+}
+int reservar_inodo(unsigned char tipo, unsigned char permisos) {
+  struct superbloque sb;
+  if (bread(posSB, &sb) == -1)
+    return FALLO;
+  if (sb.cantInodosLibres == 0)
+    return FALLO;
+  unsigned int posInodoReservado = sb.posPrimerInodoLibre;
+  struct inodo inodoAux;
+  if (leer_inodo(posInodoReservado, &inodoAux) == -1)
+    return FALLO;
+  sb.posPrimerInodoLibre = inodoAux.punterosDirectos[0];
+  inodoAux.tipo = tipo;
+  inodoAux.permisos = permisos;
+  inodoAux.nlinks = 1;
+  inodoAux.tamEnBytesLog = 0;
+  inodoAux.atime = time(NULL);
+  inodoAux.mtime = time(NULL);
+  inodoAux.ctime = time(NULL);
+  inodoAux.numBloquesOcupados = 0;
+
+  for (int i = 0; i < 12; i++) {
+    inodoAux.punterosDirectos[i] = 0;
+  }
+  for (int i = 0; i < 3; i++) {
+    inodoAux.punterosIndirectos[i] = 0;
+  }
+
+  if (escribir_inodo(posInodoReservado, &inodoAux) == -1)
+    return FALLO;
+
+  sb.cantInodosLibres--;
+  if (bwrite(posSB, &sb) == -1)
+    return FALLO;
+
+  return posInodoReservado;
 }

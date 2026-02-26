@@ -1,77 +1,70 @@
 #include "ficheros_basico.h"
 
 int main(int argc, char *argv[]) {
-
   if (argc != 2) {
     fprintf(stderr, RED "Uso: %s <nombre_dispositivo>\n" RESET, argv[0]);
     return EXIT_FAILURE;
   }
 
-  // 1️⃣ Montar dispositivo
-  if (bmount(argv[1]) == FALLO) {
-    fprintf(stderr, RED "Error: no se pudo montar el dispositivo.\n" RESET);
+  if (bmount(argv[1]) == FALLO)
     return EXIT_FAILURE;
-  }
 
   struct superbloque sb;
-
-  // 2️⃣ Leer superbloque
   if (bread(posSB, &sb) == -1) {
-    fprintf(stderr, RED "Error: no se pudo leer el superbloque.\n" RESET);
     bumount();
     return EXIT_FAILURE;
   }
 
-  // 3️⃣ Mostrar todos los campos del superbloque
-  printf("=== Superbloque ===\n");
-  printf("posPrimerBloqueMB: %u\n", sb.posPrimerBloqueMB);
-  printf("posUltimoBloqueMB: %u\n", sb.posUltimoBloqueMB);
-  printf("posPrimerBloqueAI: %u\n", sb.posPrimerBloqueAI);
-  printf("posUltimoBloqueAI: %u\n", sb.posUltimoBloqueAI);
-  printf("posPrimerBloqueDatos: %u\n", sb.posPrimerBloqueDatos);
-  printf("posUltimoBloqueDatos: %u\n", sb.posUltimoBloqueDatos);
-  printf("posInodoRaiz: %u\n", sb.posInodoRaiz);
-  printf("posPrimerInodoLibre: %u\n", sb.posPrimerInodoLibre);
-  printf("cantBloquesLibres: %u\n", sb.cantBloquesLibres);
-  printf("cantInodosLibres: %u\n", sb.cantInodosLibres);
-  printf("totBloques: %u\n", sb.totBloques);
-  printf("totInodos: %u\n", sb.totInodos);
+  printf("=== DATOS DEL SUPERBLOQUE ===\n");
+  printf("posPrimerBloqueMB: %u\nposUltimoBloqueMB: %u\n", sb.posPrimerBloqueMB,
+         sb.posUltimoBloqueMB);
+  printf("posPrimerBloqueAI: %u\nposUltimoBloqueAI: %u\n", sb.posPrimerBloqueAI,
+         sb.posUltimoBloqueAI);
+  printf("posPrimerBloqueDatos: %u\nposUltimoBloqueDatos: %u\n",
+         sb.posPrimerBloqueDatos, sb.posUltimoBloqueDatos);
+  printf("cantBloquesLibres: %u\ncantInodosLibres: %u\n", sb.cantBloquesLibres,
+         sb.cantInodosLibres);
+  printf("posInodoRaiz: %u\nposPrimerInodoLibre: %u\n", sb.posInodoRaiz,
+         sb.posPrimerInodoLibre);
 
-  // 4️⃣ Mostrar tamaño de struct inodo
-  printf("sizeof(struct inodo) = %lu bytes\n", sizeof(struct inodo));
+  printf("\n=== TEST MAPA DE BITS (leer_bit) ===\n");
+  printf("Bit %u (SB): %d\n", posSB, leer_bit(posSB));
+  printf("Bit %u (Inicio AI): %d\n", sb.posPrimerBloqueAI,
+         leer_bit(sb.posPrimerBloqueAI));
+  printf("Bit %u (Inicio Datos): %d\n", sb.posPrimerBloqueDatos,
+         leer_bit(sb.posPrimerBloqueDatos));
+  printf("Bit %u (Último bloque): %d\n", sb.totBloques - 1,
+         leer_bit(sb.totBloques - 1));
 
-  // 5️⃣ Recorrer lista de inodos libres
-  printf("\n=== Lista de inodos libres ===\n");
+  printf("\n=== TEST RESERVAR/LIBERAR BLOQUE ===\n");
+  int bloqueReservado = reservar_bloque();
+  bread(posSB, &sb); // Actualizar info tras reservar
+  printf("Bloque reservado: %d. Bloques libres: %u\n", bloqueReservado,
+         sb.cantBloquesLibres);
 
-  struct inodo inodos[BLOCKSIZE / INODOSIZE];
-  unsigned int inodoLibre = sb.posPrimerInodoLibre;
-  unsigned int leidos = 0;
+  liberar_bloque(bloqueReservado);
+  bread(posSB, &sb); // Actualizar info tras liberar
+  printf("Bloque liberado: %d. Bloques libres: %u\n", bloqueReservado,
+         sb.cantBloquesLibres);
 
-  while (inodoLibre != UINT_MAX && leidos < sb.totInodos) {
+  printf("\n=== DATOS DEL INODO RAÍZ ===\n");
+  struct inodo raiz;
+  leer_inodo(sb.posInodoRaiz, &raiz);
 
-    unsigned int bloque =
-        sb.posPrimerBloqueAI + (inodoLibre / (BLOCKSIZE / INODOSIZE));
-    unsigned int indice = inodoLibre % (BLOCKSIZE / INODOSIZE);
+  struct tm *ts;
+  char atime[80], mtime[80], ctime[80];
+  ts = localtime(&raiz.atime);
+  strftime(atime, sizeof(atime), "%a %Y-%m-%d %H:%M:%S", ts);
+  ts = localtime(&raiz.mtime);
+  strftime(mtime, sizeof(mtime), "%a %Y-%m-%d %H:%M:%S", ts);
+  ts = localtime(&raiz.ctime);
+  strftime(ctime, sizeof(ctime), "%a %Y-%m-%d %H:%M:%S", ts);
 
-    // Leer bloque si es la primera vez
-    if (bread(bloque, inodos) == -1) {
-      fprintf(stderr, RED "Error leyendo bloque de inodos.\n" RESET);
-      bumount();
-      return EXIT_FAILURE;
-    }
+  printf("Tipo: %c\nPermisos: %u\n", raiz.tipo, raiz.permisos);
+  printf("ATIME: %s\nMTIME: %s\nCTIME: %s\n", atime, mtime, ctime);
+  printf("nlinks: %u\ntamEnBytesLog: %u\nnumBloquesOcupados: %u\n", raiz.nlinks,
+         raiz.tamEnBytesLog, raiz.numBloquesOcupados);
 
-    printf("Inodo %u -> punterosDirectos[0] = %u\n", inodoLibre,
-           inodos[indice].punterosDirectos[0]);
-
-    inodoLibre = inodos[indice].punterosDirectos[0];
-    leidos++;
-  }
-
-  // 6️⃣ Desmontar
-  if (bumount() == FALLO) {
-    fprintf(stderr, RED "Error desmontando el dispositivo.\n" RESET);
-    return EXIT_FAILURE;
-  }
-
+  bumount();
   return EXIT_SUCCESS;
 }

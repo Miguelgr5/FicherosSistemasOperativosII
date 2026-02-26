@@ -1,4 +1,3 @@
-
 #include "ficheros_basico.h"
 
 int main(int argc, char *argv[]) {
@@ -45,14 +44,19 @@ int main(int argc, char *argv[]) {
     bumount();
     return EXIT_FAILURE;
   }
-
+  // 6️⃣ Reservar inodo raíz
+  printf("Creando directorio raíz...\n");
+  if (reservar_inodo('d', 7) == FALLO) {
+    fprintf(stderr, RED "Error al reservar el inodo raíz.\n" RESET);
+    bumount();
+    return EXIT_FAILURE;
+  }
   // 6️⃣ Desmontar
   if (bumount() == FALLO) {
     fprintf(stderr, RED "Error desmontando el dispositivo.\n" RESET);
     return EXIT_FAILURE;
   }
 
-  printf(GREEN
-         "Éxito: Sistema de ficheros nivel 1 creado correctamente.\n" RESET);
+  printf(GREEN "Éxito: Sistema de ficheros creado correctamente.\n" RESET);
   return EXIT_SUCCESS;
 }
