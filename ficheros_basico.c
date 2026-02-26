@@ -111,4 +111,96 @@ int escribir_bit(unsigned int nbloque, unsigned int bit) {
   (bit == 1) ? (bufferMB[posbyte] |= mascara) : (bufferMB[posbyte] &= ~mascara);
   return bwrite(nbloqueabs, bufferMB);
 }
-char leer_bit(unsigned int nbloque) {}
+char leer_bit(unsigned int nbloque) {
+  struct superbloque sb;
+  if (bread(posSB, &sb) == -1)
+    return FALLO;
+
+  unsigned int posbyteMB = nbloque / 8;
+  unsigned int posbit = nbloque % 8;
+  unsigned int nbloqueMB = posbyteMB / BLOCKSIZE;
+  unsigned int nbloqueabs = sb.posPrimerBloqueMB + nbloqueMB;
+  unsigned int posbyte = posbyteMB % BLOCKSIZE;
+  unsigned char bufferMB[BLOCKSIZE];
+  if (bread(nbloqueabs, bufferMB))
+    return FALLO;
+  unsigned char mascara = 128;
+  mascara >>= posbit;
+  mascara &= bufferMB[posbyte];
+  mascara >>= (7 - posbit);
+  return mascara;
+}
+int reservar_bloque() {
+  struct superbloque SB;
+  if (bread(posSB, &SB) == -1)
+    return FALLO;
+  if (SB.cantBloquesLibres == 0) {
+    return -1;
+  }
+
+  unsigned char bufferMB[BLOCKSIZE];
+  unsigned char bufferAux[BLOCKSIZE];
+  unsigned int totalBloquesMB =
+      (SB.posUltimoBloqueMB - SB.posPrimerBloqueMB) + 1;
+  memset(bufferAux, 255, BLOCKSIZE);
+
+  unsigned int nbloqueMB = 0;
+  int encontrado = 0;
+
+  while (nbloqueMB < totalBloquesMB) {
+    if (bread(SB.posPrimerBloqueMB + nbloqueMB, bufferMB) == -1)
+      return -1;
+
+    if (memcmp(bufferMB, bufferAux, BLOCKSIZE) != 0) {
+      encontrado = 1;
+      break;
+    }
+    nbloqueMB++;
+  }
+
+  if (!encontrado)
+    return -1;
+
+  int posbyte = 0;
+  while (bufferMB[posbyte] == 255) {
+    posbyte++;
+  }
+
+  unsigned char mascara = 128;
+  int posbit = 0;
+  unsigned char byteAux = bufferMB[posbyte];
+
+  while (byteAux & mascara) {
+    byteAux <<= 1;
+    posbit++;
+  }
+
+  unsigned int nbloque = (nbloqueMB * BLOCKSIZE + posbyte) * 8 + posbit;
+
+  escribir_bit(nbloque, 1);
+
+  SB.cantBloquesLibres--;
+  bwrite(posSB, &SB);
+
+  unsigned char bufferCeros[BLOCKSIZE];
+  memset(bufferCeros, 0, BLOCKSIZE);
+  bwrite(nbloque, bufferCeros);
+
+  return nbloque;
+}
+int liberar_bloque(unsigned int nbloque) {
+  if (escribir_bit(nbloque, 0))
+    return FALLO;
+  struct superbloque sb;
+  if (bread(posSB, &sb) == -1)
+    return FALLO;
+  sb.cantBloquesLibres++;
+  if (bwrite(posSB, &sb))
+    return FALLO;
+  return nbloque;
+}
+int escribir_inodo(unsigned int ninodo, struct inodo *inodo) {
+  struct superbloque sb;
+  if (bread(posSB, &sb) == -1)
+    return FALLO;
+}
