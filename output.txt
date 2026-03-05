@@ -12,35 +12,36 @@ cantInodosLibres = 24999
 totBloques = 100000
 totInodos = 25000
 
-RESERVAMOS UN BLOQUE Y LUEGO LO LIBERAMOS
-Se ha reservado el bloque físico nº 3139 que era el 1º libre indicado por el MB
-SB.cantBloquesLibres = 96860
-Liberamos ese bloque y después SB.cantBloquesLibres = 96860
+INODO 1. TRADUCCION DE LOS BLOQUES LOGICOS 8, 204, 30.004, 400.004 y 468.750
 
-MAPA DE BITS CON BLOQUES DE METADATOS OCUPADOS
-[leer_bit(0)→ posbyteMB:0, posbyte:0, posbit:0, nbloqueMB:0, nbloqueabs:1)]
-posSB: 0 → leer_bit(0) = 1
-[leer_bit(1)→ posbyteMB:0, posbyte:0, posbit:1, nbloqueMB:0, nbloqueabs:1)]
-SB.posPrimerBloqueMB: 1 → leer_bit(1) = 1
-[leer_bit(13)→ posbyteMB:1, posbyte:1, posbit:5, nbloqueMB:0, nbloqueabs:1)]
-SB.posUltimoBloqueMB: 13 → leer_bit(13) = 1
-[leer_bit(1)→ posbyteMB:0, posbyte:0, posbit:1, nbloqueMB:0, nbloqueabs:1)]
-SB.posPrimerBloqueAI: 1 → leer_bit(1) = 1
-[leer_bit(3138)→ posbyteMB:392, posbyte:392, posbit:2, nbloqueMB:0, nbloqueabs:1)]
-SB.posUltimoBloqueAI: 3138 → leer_bit(3138) = 1
-[leer_bit(3139)→ posbyteMB:392, posbyte:392, posbit:3, nbloqueMB:0, nbloqueabs:1)]
-SB.posPrimerBloqueDatos: 3139 → leer_bit(3139) = 0
-[leer_bit(99999)→ posbyteMB:12499, posbyte:211, posbit:7, nbloqueMB:12, nbloqueabs:13)]
-SB.posUltimoBloqueDatos: 99999 → leer_bit(99999) = 0
+[traducir_bloque_inodo()→ inodo.punterosDirectos[8] = 3139 (reservado BF 3139 para BL 8)]
 
-DATOS DEL DIRECTORIO RAIZ
-tipo: d
-permisos: 7
-atime: Thu 2026-02-26 18:03:04
-mtime: Thu 2026-02-26 18:03:04
-ctime: Thu 2026-02-26 18:03:04
-btime: Thu 2026-02-26 18:03:04
+[traducir_bloque_inodo()→ inodo.punterosIndirectos[0] = 3140 (reservado BF 3140 para punteros_nivel1)]
+[traducir_bloque_inodo()→ punteros_nivel1 [192] = 3141 (reservado BF 3141 para BL 204)]
+
+[traducir_bloque_inodo()→ inodo.punterosIndirectos[1] = 3142 (reservado BF 3142 para punteros_nivel2)]
+[traducir_bloque_inodo()→ punteros_nivel2 [116] = 3143 (reservado BF 3143 para punteros_nivel1)]
+[traducir_bloque_inodo()→ punteros_nivel1 [40] = 3144 (reservado BF 3144 para BL 30004)]
+
+[traducir_bloque_inodo()→ inodo.punterosIndirectos[2] = 3145 (reservado BF 3145 para punteros_nivel3)]
+[traducir_bloque_inodo()→ punteros_nivel3 [5] = 3146 (reservado BF 3146 para punteros_nivel2)]
+[traducir_bloque_inodo()→ punteros_nivel2 [25] = 3147 (reservado BF 3147 para punteros_nivel1)]
+[traducir_bloque_inodo()→ punteros_nivel1 [120] = 3148 (reservado BF 3148 para BL 400004)]
+
+[traducir_bloque_inodo()→ punteros_nivel3 [6] = 3149 (reservado BF 3149 para punteros_nivel2)]
+[traducir_bloque_inodo()→ punteros_nivel2 [38] = 3150 (reservado BF 3150 para punteros_nivel1)]
+[traducir_bloque_inodo()→ punteros_nivel1 [2] = 3151 (reservado BF 3151 para BL 468750)]
+
+DATOS DEL INODO RESERVADO 1
+tipo: f
+permisos: 6
+atime: Thu 2026-03-05 16:32:58
+mtime: Thu 2026-03-05 16:32:58
+ctime: Thu 2026-03-05 16:32:58
+btime: Thu 2026-03-05 16:32:58
 nlinks: 1
 tamEnBytesLog: 0
-numBloquesOcupados: 0
+numBloquesOcupados: 13
+
+SB.posPrimerInodoLibre = 2
 Cerrando archivo...

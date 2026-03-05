@@ -1,4 +1,5 @@
 #include "ficheros_basico.h"
+#include <stdio.h>
 int tamMB(unsigned int nbloques) {
 
   int nbytes = nbloques / 8;
@@ -103,7 +104,7 @@ int escribir_bit(unsigned int nbloque, unsigned int bit) {
   unsigned int nbloqueabs = sb.posPrimerBloqueMB + nbloqueMB;
   unsigned int posbyte = posbyteMB % BLOCKSIZE;
   unsigned char bufferMB[BLOCKSIZE];
-  if (bread(nbloqueabs, bufferMB))
+  if (bread(nbloqueabs, bufferMB) == -1)
     return FALLO;
   unsigned char mascara = 128;
   mascara >>= posbit;
@@ -259,4 +260,134 @@ int reservar_inodo(unsigned char tipo, unsigned char permisos) {
     return FALLO;
 
   return posInodoReservado;
+}
+int obtener_nRangoBL(struct inodo *inodo, unsigned int nblogico,
+                     unsigned int *ptr) {
+  if (nblogico < DIRECTOS) {
+    *ptr = inodo->punterosDirectos[nblogico];
+    return 0;
+  } else if (nblogico < INDIRECTOS0) {
+    *ptr = inodo->punterosIndirectos[0];
+    return 1;
+  } else if (nblogico < INDIRECTOS1) {
+    *ptr = inodo->punterosIndirectos[1];
+    return 2;
+  } else if (nblogico < INDIRECTOS2) {
+    *ptr = inodo->punterosIndirectos[2];
+    return 3;
+  } else {
+    *ptr = 0;
+    fprintf(stderr, RED "Bloque lógico fuera de rango.\n" RESET);
+    return FALLO;
+  }
+}
+int obtener_indice(unsigned int nblogico, int nivel_punteros) {
+  if (nblogico < DIRECTOS) {
+    return nblogico;
+  } else if (nblogico < INDIRECTOS0) {
+    return nblogico - DIRECTOS;
+  } else if (nblogico < INDIRECTOS1) {
+    if (nivel_punteros == 2) {
+      return (nblogico - INDIRECTOS0) / NPUNTEROS;
+    }
+    return (nblogico - INDIRECTOS0) % NPUNTEROS;
+  } else if (nblogico < INDIRECTOS2) {
+    if (nivel_punteros == 3)
+      return (nblogico - INDIRECTOS1) / (NPUNTEROS * NPUNTEROS);
+    if (nivel_punteros == 2)
+      return ((nblogico - INDIRECTOS1) % (NPUNTEROS * NPUNTEROS)) / NPUNTEROS;
+    if (nivel_punteros == 1)
+      return ((nblogico - INDIRECTOS1) % (NPUNTEROS * NPUNTEROS)) % NPUNTEROS;
+  }
+  fprintf(stderr, RED "Error obteniendo Índice.\n" RESET);
+  return FALLO;
+}
+int traducir_bloque_inodo(unsigned int ninodo, unsigned int nblogico,
+                          unsigned char reservar) {
+  unsigned int ptr = 0, ptr_ant = 0;
+  int salvar_inodo = 0, indice = 0;
+  int nRangoBL, nivel_punteros;
+  unsigned int buffer[BLOCKSIZE / sizeof(unsigned int)];
+  struct inodo inodo;
+
+  if (leer_inodo(ninodo, &inodo) == FALLO)
+    return FALLO;
+
+  nRangoBL = obtener_nRangoBL(&inodo, nblogico, &ptr); // 0:D, 1:I0, 2:I1, 3:I2
+  nivel_punteros = nRangoBL;
+
+  if (nRangoBL == 0) { // Caso punteros Directos
+    if (ptr == 0) {    // No existe el bloque de datos
+      if (reservar == 0)
+        return -1;
+
+      ptr = reservar_bloque();
+      inodo.numBloquesOcupados++;
+      inodo.ctime = time(NULL);
+      inodo.punterosDirectos[nblogico] = ptr;
+      salvar_inodo = 1;
+      printf("[traducir_bloque_inodo()→ inodo.punterosDirectos[%u] = %u "
+             "(reservado BF %u para BL %u)]\n",
+             nblogico, ptr, ptr, nblogico);
+    }
+  } else { // Caso de punteros Indirectos (I0, I1, I2)
+    while (nivel_punteros > 0) {
+      if (ptr == 0) { // No cuelgan bloques de punteros
+        if (reservar == 0)
+          return -1;
+
+        ptr = reservar_bloque();
+        inodo.numBloquesOcupados++;
+        inodo.ctime = time(NULL);
+        salvar_inodo = 1;
+
+        if (nivel_punteros == nRangoBL) { // Cuelga directamente del inodo
+          inodo.punterosIndirectos[nRangoBL - 1] = ptr;
+          printf("[traducir_bloque_inodo()→ inodo.punterosIndirectos[%u] = %u "
+                 "(reservado BF %u para punteros_nivel%u)]\n",
+                 nRangoBL - 1, ptr, ptr, nivel_punteros);
+        } else { // Cuelga de otro bloque de punteros
+          buffer[indice] = ptr;
+          if (bwrite(ptr_ant, buffer) == FALLO)
+            return FALLO;
+          printf("[traducir_bloque_inodo()→ punteros_nivel%u [%u] = %u "
+                 "(reservado BF %u para punteros_nivel%u)]\n",
+                 nivel_punteros + 1, indice, ptr, ptr, nivel_punteros);
+        }
+        memset(buffer, 0, BLOCKSIZE); // Limpiamos el nuevo bloque de punteros
+      } else {
+        if (bread(ptr, buffer) == FALLO)
+          return FALLO;
+      }
+
+      indice = obtener_indice(nblogico, nivel_punteros);
+      ptr_ant = ptr;
+      ptr = buffer[indice];
+      nivel_punteros--;
+    }
+
+    // Al salir del bucle estamos al nivel de datos
+    if (ptr == 0) {
+      if (reservar == 0)
+        return -1;
+
+      ptr = reservar_bloque();
+      inodo.numBloquesOcupados++;
+      inodo.ctime = time(NULL);
+      salvar_inodo = 1;
+      buffer[indice] = ptr;
+      if (bwrite(ptr_ant, buffer) == FALLO)
+        return FALLO;
+      printf("[traducir_bloque_inodo()→ punteros_nivel1 [%u] = %u (reservado "
+             "BF %u para BL %u)]\n",
+             indice, ptr, ptr, nblogico);
+    }
+  }
+
+  if (salvar_inodo) {
+    if (escribir_inodo(ninodo, &inodo) == FALLO)
+      return FALLO;
+  }
+
+  return ptr; // Retorna el bloque físico
 }

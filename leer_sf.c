@@ -1,5 +1,6 @@
 #include "ficheros_basico.h"
-
+// #define DEBUGN2
+// #define DEBUGN3
 int main(int argc, char *argv[]) {
   if (argc != 2) {
     fprintf(stderr, RED "Uso: %s <nombre_dispositivo>\n" RESET, argv[0]);
@@ -27,7 +28,7 @@ int main(int argc, char *argv[]) {
   printf("cantInodosLibres = %u\n", sb.cantInodosLibres);
   printf("totBloques = %u\n", sb.totBloques);
   printf("totInodos = %u\n", sb.totInodos);
-
+#if defined(DEBUGN2)
   // 2. Test Reservar/Liberar
   printf("\nRESERVAMOS UN BLOQUE Y LUEGO LO LIBERAMOS\n");
   int primerLibre = reservar_bloque();
@@ -41,7 +42,8 @@ int main(int argc, char *argv[]) {
   bread(posSB, &sb); // Recargamos SB
   printf("Liberamos ese bloque y después SB.cantBloquesLibres = %u\n",
          sb.cantBloquesLibres);
-
+#endif
+#if defined(DEBUGN3)
   // 3. Mapa de Bits con rastreo (Debug)
   printf("\nMAPA DE BITS CON BLOQUES DE METADATOS OCUPADOS\n");
   unsigned int bits_a_testear[] = {0,
@@ -95,7 +97,44 @@ int main(int argc, char *argv[]) {
          btime);
   printf("nlinks: %u\ntamEnBytesLog: %u\nnumBloquesOcupados: %u\n", raiz.nlinks,
          raiz.tamEnBytesLog, raiz.numBloquesOcupados);
+#endif
+  // --- PRUEBA NIVEL 4 ---
+  printf("\nINODO 1. TRADUCCION DE LOS BLOQUES LOGICOS 8, 204, 30.004, 400.004 "
+         "y 468.750\n\n");
 
-  bumount();
-  return EXIT_SUCCESS;
+  int ninodo = reservar_inodo('f', 6);
+
+  unsigned int bloques[] = {8, 204, 30004, 400004, 468750};
+  for (int i = 0; i < 5; i++) {
+    traducir_bloque_inodo(ninodo, bloques[i], 1);
+    printf("\n"); // Espacio entre traducciones para claridad
+  }
+
+  // Mostrar datos del inodo reservado
+  struct inodo inodo_test;
+  leer_inodo(ninodo, &inodo_test);
+
+  struct tm *ts;
+  char atime[80], mtime[80], ctime[80], btime[80];
+  ts = localtime(&inodo_test.atime);
+  strftime(atime, sizeof(atime), "%a %Y-%m-%d %H:%M:%S", ts);
+  ts = localtime(&inodo_test.mtime);
+  strftime(mtime, sizeof(mtime), "%a %Y-%m-%d %H:%M:%S", ts);
+  ts = localtime(&inodo_test.ctime);
+  strftime(ctime, sizeof(ctime), "%a %Y-%m-%d %H:%M:%S", ts);
+  ts = localtime(&inodo_test.ctime);
+  strftime(btime, sizeof(btime), "%a %Y-%m-%d %H:%M:%S", ts);
+
+  printf("DATOS DEL INODO RESERVADO %d\n", ninodo);
+  printf("tipo: %c\npermisos: %u\n", inodo_test.tipo, inodo_test.permisos);
+  printf("atime: %s\nmtime: %s\nctime: %s\nbtime: %s\n", atime, mtime, ctime,
+         btime);
+  printf("nlinks: %u\ntamEnBytesLog: %u\nnumBloquesOcupados: %u\n",
+         inodo_test.nlinks, inodo_test.tamEnBytesLog,
+         inodo_test.numBloquesOcupados);
+
+  // Actualizar y mostrar el estado final del superbloque
+  bread(posSB, &sb);
+  printf("\nSB.posPrimerInodoLibre = %u\n", sb.posPrimerInodoLibre);
+  return bumount();
 }
