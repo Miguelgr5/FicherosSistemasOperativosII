@@ -32,6 +32,8 @@ int main(int argc, char *argv[]) {
   // 2. Test Reservar/Liberar
   printf("\nRESERVAMOS UN BLOQUE Y LUEGO LO LIBERAMOS\n");
   int primerLibre = reservar_bloque();
+  if (primerLibre == -1)
+    return EXIT_FAILURE;
   bread(posSB, &sb); // Recargamos SB para ver cambios
   printf("Se ha reservado el bloque físico nº %d que era el 1º libre indicado "
          "por el MB\n",

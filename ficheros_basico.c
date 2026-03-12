@@ -372,6 +372,10 @@ int traducir_bloque_inodo(unsigned int ninodo, unsigned int nblogico,
         return -1;
 
       ptr = reservar_bloque();
+      if (ptr == -1) {
+        fprintf(stderr, RED "Error reservando bloque.\n" RESET);
+        return FALLO;
+      }
       inodo.numBloquesOcupados++;
       inodo.ctime = time(NULL);
       salvar_inodo = 1;
