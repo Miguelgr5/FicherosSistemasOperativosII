@@ -1,6 +1,7 @@
 #include "bloques.h"
 #include <fcntl.h>
 #include <stdio.h>
+// #define DEBUG
 static int descriptor;
 int bmount(const char *camino) {
   umask(0000);
@@ -19,7 +20,9 @@ int bumount() {
     perror("Error al cerrar archivo\n");
     fprintf(stderr, RESET);
   }
-  printf("Cerrando archivo...\n");
+#if defined(DEBUG)
+  fprintf(stderr, "Cerrando archivo...\n");
+#endif
   return descriptor;
 }
 int bwrite(unsigned int nbloque, const void *buf) {

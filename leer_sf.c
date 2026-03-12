@@ -1,6 +1,7 @@
 #include "ficheros_basico.h"
 // #define DEBUGN2
 // #define DEBUGN3
+// #define DEBUGN4
 int main(int argc, char *argv[]) {
   if (argc != 2) {
     fprintf(stderr, RED "Uso: %s <nombre_dispositivo>\n" RESET, argv[0]);
@@ -100,6 +101,7 @@ int main(int argc, char *argv[]) {
   printf("nlinks: %u\ntamEnBytesLog: %u\nnumBloquesOcupados: %u\n", raiz.nlinks,
          raiz.tamEnBytesLog, raiz.numBloquesOcupados);
 #endif
+#if defined(DEBUGN4)
   // --- PRUEBA NIVEL 4 ---
   printf("\nINODO 1. TRADUCCION DE LOS BLOQUES LOGICOS 8, 204, 30.004, 400.004 "
          "y 468.750\n\n");
@@ -138,5 +140,6 @@ int main(int argc, char *argv[]) {
   // Actualizar y mostrar el estado final del superbloque
   bread(posSB, &sb);
   printf("\nSB.posPrimerInodoLibre = %u\n", sb.posPrimerInodoLibre);
+#endif
   return bumount();
 }
