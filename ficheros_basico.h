@@ -2,6 +2,8 @@
 #include <limits.h>
 #include <time.h>
 #define NPUNTEROS (BLOCKSIZE / sizeof(unsigned int)) // 256 punteros por bloque
+#define NPUNTEROS2 (NPUNTEROS * NPUNTEROS)           // 65.536
+#define NPUNTEROS3 (NPUNTEROS * NPUNTEROS * NPUNTEROS) // 16.777.216
 #define DIRECTOS 12
 #define INDIRECTOS0 (NPUNTEROS + DIRECTOS)                // 268
 #define INDIRECTOS1 (NPUNTEROS * NPUNTEROS + INDIRECTOS0) // 65.804
@@ -88,3 +90,5 @@ int obtener_nRangoBL(struct inodo *inodo, unsigned int nblogico,
 int obtener_indice(unsigned int nblogico, int nivel_punteros);
 int traducir_bloque_inodo(unsigned int ninodo, unsigned int nblogico,
                           unsigned char reservar);
+int liberar_inodo(unsigned int ninodo);
+int liberar_bloques_inodo(unsigned int primerBL, struct inodo *inodo);

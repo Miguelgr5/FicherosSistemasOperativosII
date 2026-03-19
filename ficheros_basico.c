@@ -1,5 +1,6 @@
 #include "ficheros_basico.h"
 #include <stdio.h>
+#define DEBUGN6
 int tamMB(unsigned int nbloques) {
 
   int nbytes = nbloques / 8;
@@ -189,13 +190,13 @@ int reservar_bloque() {
   return nbloque;
 }
 int liberar_bloque(unsigned int nbloque) {
-  if (escribir_bit(nbloque, 0))
+  if (escribir_bit(nbloque, 0) == -1)
     return FALLO;
   struct superbloque sb;
   if (bread(posSB, &sb) == -1)
     return FALLO;
   sb.cantBloquesLibres++;
-  if (bwrite(posSB, &sb))
+  if (bwrite(posSB, &sb) == -1)
     return FALLO;
   return nbloque;
 }
@@ -394,4 +395,390 @@ int traducir_bloque_inodo(unsigned int ninodo, unsigned int nblogico,
   }
 
   return ptr; // Retorna el bloque físico
+}
+int liberar_inodo(unsigned int ninodo) {
+  struct inodo inodo;
+  struct superbloque sb;
+
+  // 1. Leer el inodo a liberar
+  if (leer_inodo(ninodo, &inodo) == FALLO)
+    return FALLO;
+
+  // 2. Liberar todos los bloques ocupados desde el bloque lógico 0
+  int liberados = liberar_bloques_inodo(0, &inodo);
+  if (liberados == FALLO)
+    return FALLO;
+
+  // 3. Actualizar la cantidad de bloques ocupados (debería quedar a 0)
+  inodo.numBloquesOcupados -= liberados;
+
+  // 4. Marcar el inodo como libre y reiniciar su tamaño
+  inodo.tipo = 'l';
+  inodo.tamEnBytesLog = 0;
+
+  // 5. Actualizar la lista enlazada de inodos libres en el superbloque
+  if (bread(posSB, &sb) == FALLO)
+    return FALLO;
+
+  // El inodo liberado apuntará al que era el primer inodo libre
+  inodo.punterosDirectos[0] = sb.posPrimerInodoLibre;
+
+  // El superbloque ahora apunta a este inodo como el primero libre
+  sb.posPrimerInodoLibre = ninodo;
+  sb.cantInodosLibres++;
+
+  // 6. Escribir el superbloque actualizado en disco
+  if (bwrite(posSB, &sb) == FALLO)
+    return FALLO;
+
+  // 7. Actualizar ctime y guardar el inodo
+  inodo.ctime = time(NULL);
+  if (escribir_inodo(ninodo, &inodo) == FALLO)
+    return FALLO;
+
+  return ninodo;
+}
+int liberar_bloques_inodo(unsigned int primerBL, struct inodo *inodo) {
+  unsigned int nivel_punteros, nblog, ultimoBL;
+  unsigned char bufAux_punteros[BLOCKSIZE];
+  unsigned int bloques_punteros[3][NPUNTEROS];
+  int indices_primerBL[3];
+  int liberados = 0;
+  int i, j, k;
+  int eof = 0;
+  int contador_breads = 0;
+  int contador_bwrites = 0;
+  int bloque_modificado[3] = {0, 0, 0};
+
+#if defined(DEBUGN6)
+  int BLliberado = 0; // Para los prints de debug
+#endif
+
+  if (inodo->tamEnBytesLog == 0)
+    return 0;
+
+  if (inodo->tamEnBytesLog % BLOCKSIZE == 0) {
+    ultimoBL = inodo->tamEnBytesLog / BLOCKSIZE - 1;
+  } else {
+    ultimoBL = inodo->tamEnBytesLog / BLOCKSIZE;
+  }
+
+#if defined(DEBUGN6)
+  fprintf(stderr, "[liberar_bloques_inodo()→ primer BL: %d, último BL: %d]\n",
+          primerBL, ultimoBL);
+#endif
+
+  memset(bufAux_punteros, 0, BLOCKSIZE);
+
+  // 1. Liberar bloques Directos
+  if (primerBL < DIRECTOS) {
+    nivel_punteros = 0;
+    i = obtener_indice(primerBL, nivel_punteros);
+    while (!eof && i < DIRECTOS) {
+      nblog = i;
+      if (nblog == ultimoBL)
+        eof = 1;
+      if (inodo->punterosDirectos[i]) {
+        liberar_bloque(inodo->punterosDirectos[i]);
+#if defined(DEBUGN6)
+        fprintf(
+            stderr,
+            "[liberar_bloques_inodo()→ liberado BF %d de datos para BL %d]\n",
+            inodo->punterosDirectos[i], nblog);
+#endif
+        liberados++;
+        inodo->punterosDirectos[i] = 0;
+      }
+      i++;
+    }
+  }
+
+  // 2. Liberar bloques de Indirectos[0]
+  if (primerBL < INDIRECTOS0 && !eof) {
+    nivel_punteros = 1;
+    if (inodo->punterosIndirectos[0]) {
+      bread(inodo->punterosIndirectos[0], bloques_punteros[nivel_punteros - 1]);
+      bloque_modificado[nivel_punteros - 1] = 0;
+      contador_breads++;
+
+      if (primerBL >= DIRECTOS)
+        i = obtener_indice(primerBL, nivel_punteros);
+      else
+        i = 0;
+
+      while (!eof && i < NPUNTEROS) {
+        nblog = DIRECTOS + i;
+        if (nblog == ultimoBL)
+          eof = 1;
+        if (bloques_punteros[nivel_punteros - 1][i]) {
+          liberar_bloque(bloques_punteros[nivel_punteros - 1][i]);
+#if defined(DEBUGN6)
+          fprintf(
+              stderr,
+              "[liberar_bloques_inodo()→ liberado BF %d de datos para BL %d]\n",
+              bloques_punteros[nivel_punteros - 1][i], nblog);
+          BLliberado = nblog;
+#endif
+          liberados++;
+          bloques_punteros[nivel_punteros - 1][i] = 0;
+          bloque_modificado[nivel_punteros - 1] = 1;
+        }
+        i++;
+      }
+
+      if (memcmp(bloques_punteros[nivel_punteros - 1], bufAux_punteros,
+                 BLOCKSIZE) == 0) {
+        liberar_bloque(inodo->punterosIndirectos[0]);
+#if defined(DEBUGN6)
+        fprintf(stderr,
+                "[liberar_bloques_inodo()→ liberado BF %d de punteros_nivel%d "
+                "correspondiente al BL %d]\n",
+                inodo->punterosIndirectos[0], nivel_punteros, BLliberado);
+#endif
+        liberados++;
+        inodo->punterosIndirectos[0] = 0;
+      } else {
+        if (bloque_modificado[nivel_punteros - 1]) {
+          if (bwrite(inodo->punterosIndirectos[0],
+                     bloques_punteros[nivel_punteros - 1]) < 0)
+            return -1;
+          contador_bwrites++;
+        }
+      }
+    }
+  }
+
+  // 3. Liberar bloques de Indirectos[1]
+  if (primerBL < INDIRECTOS1 && !eof) {
+    nivel_punteros = 2;
+    indices_primerBL[0] = 0;
+    indices_primerBL[1] = 0;
+    if (inodo->punterosIndirectos[1]) {
+      bread(inodo->punterosIndirectos[1], bloques_punteros[nivel_punteros - 1]);
+      bloque_modificado[nivel_punteros - 1] = 0;
+      contador_breads++;
+
+      if (primerBL >= INDIRECTOS0)
+        i = obtener_indice(primerBL, nivel_punteros);
+      else
+        i = 0;
+
+      indices_primerBL[nivel_punteros - 1] = i;
+      while (!eof && i < NPUNTEROS) {
+        if (bloques_punteros[nivel_punteros - 1][i]) {
+          bread(bloques_punteros[nivel_punteros - 1][i],
+                bloques_punteros[nivel_punteros - 2]);
+          bloque_modificado[nivel_punteros - 2] = 0;
+          contador_breads++;
+
+          if (i == indices_primerBL[nivel_punteros - 1]) {
+            j = obtener_indice(primerBL, nivel_punteros - 1);
+            indices_primerBL[nivel_punteros - 2] = j;
+          } else
+            j = 0;
+
+          while (!eof && j < NPUNTEROS) {
+            nblog = INDIRECTOS0 + i * NPUNTEROS + j;
+            if (nblog == ultimoBL)
+              eof = 1;
+            if (bloques_punteros[nivel_punteros - 2][j]) {
+              liberar_bloque(bloques_punteros[nivel_punteros - 2][j]);
+#if defined(DEBUGN6)
+              fprintf(stderr,
+                      "[liberar_bloques_inodo()→ liberado BF %d de datos para "
+                      "BL %d]\n",
+                      bloques_punteros[nivel_punteros - 2][j], nblog);
+              BLliberado = nblog;
+#endif
+              liberados++;
+              bloques_punteros[nivel_punteros - 2][j] = 0;
+              bloque_modificado[nivel_punteros - 2] = 1;
+            }
+            j++;
+          }
+          if (memcmp(bloques_punteros[nivel_punteros - 2], bufAux_punteros,
+                     BLOCKSIZE) == 0) {
+            liberar_bloque(bloques_punteros[nivel_punteros - 1][i]);
+#if defined(DEBUGN6)
+            fprintf(stderr,
+                    "[liberar_bloques_inodo()→ liberado BF %d de "
+                    "punteros_nivel%d correspondiente al BL %d]\n",
+                    bloques_punteros[nivel_punteros - 1][i], nivel_punteros - 1,
+                    BLliberado);
+#endif
+            liberados++;
+            bloques_punteros[nivel_punteros - 1][i] = 0;
+            bloque_modificado[nivel_punteros - 1] = 1;
+          } else {
+            if (bloque_modificado[nivel_punteros - 2]) {
+              if (bwrite(bloques_punteros[nivel_punteros - 1][i],
+                         bloques_punteros[nivel_punteros - 2]) < 0)
+                return -1;
+              contador_bwrites++;
+            }
+          }
+        }
+        i++;
+      }
+      if (memcmp(bloques_punteros[nivel_punteros - 1], bufAux_punteros,
+                 BLOCKSIZE) == 0) {
+        liberar_bloque(inodo->punterosIndirectos[1]);
+#if defined(DEBUGN6)
+        fprintf(stderr,
+                "[liberar_bloques_inodo()→ liberado BF %d de punteros_nivel%d "
+                "correspondiente al BL %d]\n",
+                inodo->punterosIndirectos[1], nivel_punteros, BLliberado);
+#endif
+        liberados++;
+        inodo->punterosIndirectos[1] = 0;
+      } else {
+        if (bloque_modificado[nivel_punteros - 1]) {
+          if (bwrite(inodo->punterosIndirectos[1],
+                     bloques_punteros[nivel_punteros - 1]) < 0)
+            return -1;
+          contador_bwrites++;
+        }
+      }
+    }
+  }
+
+  // 4. Liberar bloques de Indirectos[2]
+  if (primerBL < INDIRECTOS2 && !eof) {
+    nivel_punteros = 3;
+    indices_primerBL[0] = 0;
+    indices_primerBL[1] = 0;
+    indices_primerBL[2] = 0;
+    if (inodo->punterosIndirectos[2]) {
+      bread(inodo->punterosIndirectos[2], bloques_punteros[nivel_punteros - 1]);
+      bloque_modificado[nivel_punteros - 1] = 0;
+      contador_breads++;
+
+      if (primerBL >= INDIRECTOS1)
+        i = obtener_indice(primerBL, nivel_punteros);
+      else
+        i = 0;
+
+      indices_primerBL[nivel_punteros - 1] = i;
+      while (!eof && i < NPUNTEROS) {
+        if (bloques_punteros[nivel_punteros - 1][i]) {
+          bread(bloques_punteros[nivel_punteros - 1][i],
+                bloques_punteros[nivel_punteros - 2]);
+          contador_breads++;
+
+          if (i == indices_primerBL[nivel_punteros - 1]) {
+            j = obtener_indice(primerBL, nivel_punteros - 1);
+            indices_primerBL[nivel_punteros - 2] = j;
+          } else
+            j = 0;
+
+          while (!eof && j < NPUNTEROS) {
+            if (bloques_punteros[nivel_punteros - 2][j]) {
+              bread(bloques_punteros[nivel_punteros - 2][j],
+                    bloques_punteros[nivel_punteros - 3]);
+              contador_breads++;
+
+              if (i == indices_primerBL[nivel_punteros - 1] &&
+                  j == indices_primerBL[nivel_punteros - 2]) {
+                k = obtener_indice(primerBL, nivel_punteros - 2);
+                indices_primerBL[nivel_punteros - 3] = k;
+              } else
+                k = 0;
+
+              while (!eof && k < NPUNTEROS) {
+                nblog = INDIRECTOS1 + i * NPUNTEROS2 + j * NPUNTEROS + k;
+                if (nblog == ultimoBL)
+                  eof = 1;
+                if (bloques_punteros[nivel_punteros - 3][k]) {
+                  liberar_bloque(bloques_punteros[nivel_punteros - 3][k]);
+#if defined(DEBUGN6)
+                  fprintf(stderr,
+                          "[liberar_bloques_inodo()→ liberado BF %d de datos "
+                          "para BL %d]\n",
+                          bloques_punteros[nivel_punteros - 3][k], nblog);
+                  BLliberado = nblog;
+#endif
+                  liberados++;
+                  bloques_punteros[nivel_punteros - 3][k] = 0;
+                  bloque_modificado[nivel_punteros - 3] = 1;
+                }
+                k++;
+              }
+              if (memcmp(bloques_punteros[nivel_punteros - 3], bufAux_punteros,
+                         BLOCKSIZE) == 0) {
+                liberar_bloque(bloques_punteros[nivel_punteros - 2][j]);
+#if defined(DEBUGN6)
+                fprintf(stderr,
+                        "[liberar_bloques_inodo()→ liberado BF %d de "
+                        "punteros_nivel%d correspondiente al BL %d]\n",
+                        bloques_punteros[nivel_punteros - 2][j],
+                        nivel_punteros - 2, BLliberado);
+#endif
+                liberados++;
+                bloques_punteros[nivel_punteros - 2][j] = 0;
+                bloque_modificado[nivel_punteros - 2] = 1;
+              } else {
+                if (bloque_modificado[nivel_punteros - 3]) {
+                  if (bwrite(bloques_punteros[nivel_punteros - 2][j],
+                             bloques_punteros[nivel_punteros - 3]) < 0)
+                    return -1;
+                  contador_bwrites++;
+                }
+              }
+            }
+            j++;
+          }
+          if (memcmp(bloques_punteros[nivel_punteros - 2], bufAux_punteros,
+                     BLOCKSIZE) == 0) {
+            liberar_bloque(bloques_punteros[nivel_punteros - 1][i]);
+#if defined(DEBUGN6)
+            fprintf(stderr,
+                    "[liberar_bloques_inodo()→ liberado BF %d de "
+                    "punteros_nivel%d correspondiente al BL %d]\n",
+                    bloques_punteros[nivel_punteros - 1][i], nivel_punteros - 1,
+                    BLliberado);
+#endif
+            liberados++;
+            bloques_punteros[nivel_punteros - 1][i] = 0;
+            bloque_modificado[nivel_punteros - 1] = 1;
+          } else {
+            if (bloque_modificado[nivel_punteros - 2]) {
+              if (bwrite(bloques_punteros[nivel_punteros - 1][i],
+                         bloques_punteros[nivel_punteros - 2]) < 0)
+                return -1;
+              contador_bwrites++;
+            }
+          }
+        }
+        i++;
+      }
+      if (memcmp(bloques_punteros[nivel_punteros - 1], bufAux_punteros,
+                 BLOCKSIZE) == 0) {
+        liberar_bloque(inodo->punterosIndirectos[2]);
+#if defined(DEBUGN6)
+        fprintf(stderr,
+                "[liberar_bloques_inodo()→ liberado BF %d de punteros_nivel%d "
+                "correspondiente al BL %d]\n",
+                inodo->punterosIndirectos[2], nivel_punteros, BLliberado);
+#endif
+        liberados++;
+        inodo->punterosIndirectos[2] = 0;
+      } else {
+        if (bloque_modificado[nivel_punteros - 1]) {
+          if (bwrite(inodo->punterosIndirectos[2],
+                     bloques_punteros[nivel_punteros - 1]) < 0)
+            return -1;
+          contador_bwrites++;
+        }
+      }
+    }
+  }
+
+#if defined(DEBUGN6)
+  fprintf(stderr,
+          "[liberar_bloques_inodo()→ total bloques liberados: %d, "
+          "total_breads: %d, total_bwrites:%d]\n",
+          liberados, contador_breads, contador_bwrites);
+#endif
+
+  return liberados;
 }
