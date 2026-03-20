@@ -45,7 +45,9 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
   // 6️⃣ Reservar inodo raíz
-  printf("Creando directorio raíz...\n");
+#if defined(DEBUG)
+  fprintf(stderr, "Creando directorio raíz...\n");
+#endif
   if (reservar_inodo('d', 7) == FALLO) {
     fprintf(stderr, RED "Error al reservar el inodo raíz.\n" RESET);
     bumount();
@@ -56,7 +58,9 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, RED "Error desmontando el dispositivo.\n" RESET);
     return EXIT_FAILURE;
   }
-
-  printf(GREEN "Éxito: Sistema de ficheros creado correctamente.\n" RESET);
+#if defined(DEBUG)
+  fprintf(stderr,
+          GREEN "Éxito: Sistema de ficheros creado correctamente.\n" RESET);
+#endif
   return EXIT_SUCCESS;
 }

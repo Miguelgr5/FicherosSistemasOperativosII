@@ -1,6 +1,7 @@
 #include "ficheros_basico.h"
 #include <stdio.h>
 #define DEBUGN6
+// #define DEBUGSALTOS
 int tamMB(unsigned int nbloques) {
 
   int nbytes = nbloques / 8;
@@ -327,10 +328,12 @@ int traducir_bloque_inodo(unsigned int ninodo, unsigned int nblogico,
       inodo.ctime = time(NULL);
       inodo.punterosDirectos[nblogico] = ptr;
       salvar_inodo = 1;
+#if defined(DEBUGN4)
       fprintf(stderr,
               "[traducir_bloque_inodo()→ inodo.punterosDirectos[%u] = %u "
               "(reservado BF %u para BL %u)]\n",
               nblogico, ptr, ptr, nblogico);
+#endif
     }
   } else { // Caso de punteros Indirectos (I0, I1, I2)
     while (nivel_punteros > 0) {
@@ -345,16 +348,20 @@ int traducir_bloque_inodo(unsigned int ninodo, unsigned int nblogico,
 
         if (nivel_punteros == nRangoBL) { // Cuelga directamente del inodo
           inodo.punterosIndirectos[nRangoBL - 1] = ptr;
+#if defined(DEBUGN4)
           printf("[traducir_bloque_inodo()→ inodo.punterosIndirectos[%u] = %u "
                  "(reservado BF %u para punteros_nivel%u)]\n",
                  nRangoBL - 1, ptr, ptr, nivel_punteros);
+#endif
         } else { // Cuelga de otro bloque de punteros
           buffer[indice] = ptr;
           if (bwrite(ptr_ant, buffer) == FALLO)
             return FALLO;
+#if defined(DEBUGN4)
           printf("[traducir_bloque_inodo()→ punteros_nivel%u [%u] = %u "
                  "(reservado BF %u para punteros_nivel%u)]\n",
                  nivel_punteros + 1, indice, ptr, ptr, nivel_punteros);
+#endif
         }
         memset(buffer, 0, BLOCKSIZE); // Limpiamos el nuevo bloque de punteros
       } else {
@@ -437,9 +444,16 @@ int liberar_inodo(unsigned int ninodo) {
   inodo.ctime = time(NULL);
   if (escribir_inodo(ninodo, &inodo) == FALLO)
     return FALLO;
-
+#if defined(DEBUGN6)
+  fprintf(stderr,
+          "[liberar_inodo()→ Tras liberar inodo: primerInodoLibre=%u]\n",
+          sb.posPrimerInodoLibre);
+#endif
   return ninodo;
 }
+int total_breads = 0;
+int total_bwrites = 0;
+
 int liberar_bloques_inodo(unsigned int primerBL, struct inodo *inodo) {
   unsigned int nBL = primerBL;
   unsigned int ultimoBL;
@@ -447,11 +461,12 @@ int liberar_bloques_inodo(unsigned int primerBL, struct inodo *inodo) {
   int eof = 0;
   int nRangoBL = 0;
   unsigned int ptr_val = 0;
+  total_breads = 0; // Reset contadores
+  total_bwrites = 0;
 
   if (inodo->tamEnBytesLog == 0)
     return 0;
 
-  // Obtener el último bloque lógico
   if (inodo->tamEnBytesLog % BLOCKSIZE == 0) {
     ultimoBL = inodo->tamEnBytesLog / BLOCKSIZE - 1;
   } else {
@@ -463,19 +478,23 @@ int liberar_bloques_inodo(unsigned int primerBL, struct inodo *inodo) {
           primerBL, ultimoBL);
 #endif
 
-  // 1. Liberar bloques directos si procede
   nRangoBL = obtener_nRangoBL(inodo, nBL, &ptr_val);
   if (nRangoBL == 0) {
     liberados += liberar_directos(&nBL, ultimoBL, inodo, &eof);
   }
 
-  // 2. Liberar ramas de indirectos
   while (!eof) {
     nRangoBL = obtener_nRangoBL(inodo, nBL, &ptr_val);
-    // Llamada recursiva para cada rama (Indirectos 0, 1 o 2)
     liberados += liberar_indirectos_recursivo(
         &nBL, primerBL, ultimoBL, &ptr_val, nRangoBL, nRangoBL, &eof);
   }
+
+#if defined(DEBUGN6)
+  fprintf(stderr,
+          "[liberar_bloques_inodo()→ total bloques liberados: %d, "
+          "total_breads: %d, total_bwrites: %d]\n",
+          liberados, total_breads, total_bwrites);
+#endif
 
   return liberados;
 }
@@ -510,55 +529,45 @@ int liberar_indirectos_recursivo(unsigned int *nBL, unsigned int primerBL,
   unsigned int bufferCeros[NPUNTEROS];
   memset(bufferCeros, 0, BLOCKSIZE);
 
-  // Caso: El puntero al bloque de índices es 0 (HUECO)
   if (*ptr == 0) {
-    unsigned int salto = 0;
-    switch (nivel_punteros) {
-    case 1:
-      salto = 1;
-      break;
-    case 2:
+#if defined(DEBUGNSALTOS)
+    unsigned int BL_antes = *nBL;
+#endif
+    unsigned int salto = 1;
+    if (nivel_punteros == 2)
       salto = NPUNTEROS;
-      break;
-    case 3:
+    else if (nivel_punteros == 3)
       salto = NPUNTEROS * NPUNTEROS;
-      break;
-    }
 
-    // Si estamos en el nivel superior del inodo, el salto es el rango completo
     if (nivel_punteros == nRangoBL) {
       if (nRangoBL == 1)
-        *nBL = INDIRECTOS0;
+        *nBL = INDIRECTOS0 + NPUNTEROS;
       else if (nRangoBL == 2)
-        *nBL = INDIRECTOS1;
+        *nBL = INDIRECTOS1 + (NPUNTEROS * NPUNTEROS);
       else if (nRangoBL == 3)
-        *nBL = INDIRECTOS2;
+        *nBL = INDIRECTOS2 + (NPUNTEROS * NPUNTEROS * NPUNTEROS);
     } else {
       *nBL += salto;
     }
 
-#if defined(DEBUGN6)
-    fprintf(stderr,
-            "[liberar_bloques_inodo()→ Saltamos hasta BL %u por puntero a 0]\n",
-            *nBL);
+#if defined(DEBUGNSALTOS)
+    fprintf(stderr, "[liberar_bloques_inodo()→ Saltamos del BL %u al BL %u]\n",
+            BL_antes, *nBL - 1);
 #endif
     if (*nBL > ultimoBL)
       *eof = 1;
     return 0;
   }
 
-  // Leer el bloque de punteros si es necesario
-  int indice_inicial = obtener_indice(*nBL, nivel_punteros);
-  if (indice_inicial == 0 || *nBL == primerBL) {
-    if (bread(*ptr, bloquePunteros) == FALLO)
-      return FALLO;
-  }
+  if (bread(*ptr, bloquePunteros) == FALLO)
+    return FALLO;
+  total_breads++;
 
-  // Recorrer las entradas del bloque
+  int indice_inicial = obtener_indice(*nBL, nivel_punteros);
+
   for (int i = indice_inicial; i < NPUNTEROS && !(*eof); i++) {
     if (bloquePunteros[i] != 0) {
       if (nivel_punteros == 1) {
-        // Liberar bloque de DATOS
         liberar_bloque(bloquePunteros[i]);
 #if defined(DEBUGN6)
         fprintf(
@@ -571,7 +580,6 @@ int liberar_indirectos_recursivo(unsigned int *nBL, unsigned int primerBL,
         liberados++;
         (*nBL)++;
       } else {
-        // Llamada recursiva al nivel inferior
         unsigned int ptr_antes = bloquePunteros[i];
         liberados += liberar_indirectos_recursivo(nBL, primerBL, ultimoBL,
                                                   &bloquePunteros[i], nRangoBL,
@@ -580,7 +588,10 @@ int liberar_indirectos_recursivo(unsigned int *nBL, unsigned int primerBL,
           modificado = 1;
       }
     } else {
-      // Salto por puntero a 0 dentro del bloque
+
+#if defined(DEBUGNSALTOS)
+      unsigned int BL_antes = *nBL;
+#endif
       switch (nivel_punteros) {
       case 1:
         (*nBL)++;
@@ -592,26 +603,36 @@ int liberar_indirectos_recursivo(unsigned int *nBL, unsigned int primerBL,
         (*nBL) += (NPUNTEROS * NPUNTEROS);
         break;
       }
+#if defined(DEBUGNSALTOS)
+      fprintf(stderr,
+              "[liberar_bloques_inodo()→ Saltamos del BL %u al BL %u]\n",
+              BL_antes, *nBL - 1);
+#endif
     }
     if (*nBL > ultimoBL)
       *eof = 1;
   }
 
-  // Post-procesamiento del bloque de punteros
   if (memcmp(bloquePunteros, bufferCeros, BLOCKSIZE) == 0) {
-    // Bloque queda vacío: se libera el bloque de índices
     liberar_bloque(*ptr);
 #if defined(DEBUGN6)
     fprintf(stderr,
-            "[liberar_bloques_inodo()→ liberado BF %u de punteros nivel %d]\n",
-            *ptr, nivel_punteros);
+            "[liberar_bloques_inodo()→ liberado BF %u de punteros_nivel%d "
+            "correspondiente al BL %u]\n",
+            *ptr, nivel_punteros, *nBL - 1);
 #endif
     *ptr = 0;
     liberados++;
   } else if (modificado) {
-    // Bloque no vacío pero modificado: guardar en disco
     if (bwrite(*ptr, bloquePunteros) == FALLO)
       return FALLO;
+    total_bwrites++;
+#if defined(DEBUGN6)
+    fprintf(stderr,
+            "[liberar_bloques_inodo()→ salvado BF %u de punteros_nivel%d "
+            "correspondiente al BL %u]\n",
+            *ptr, nivel_punteros, *nBL - 1);
+#endif
   }
 
   return liberados;
