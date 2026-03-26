@@ -1,7 +1,7 @@
 #include "ficheros_basico.h"
 #include <stdio.h>
-#define DEBUGN6
-// #define DEBUGSALTOS
+// #define DEBUGN6
+//  #define DEBUGSALTOS
 int tamMB(unsigned int nbloques) {
 
   int nbytes = nbloques / 8;
