@@ -1,30 +1,36 @@
 #include "directorios.h"
 #define DEBUGN7
 int extraer_camino(const char *camino, char *inicial, char *final, char *tipo) {
-  if (camino[0] != '/')
+  // Verificación de seguridad básica
+  if (camino == NULL || camino[0] != '/') {
     return FALLO;
+  }
 
+  // Buscamos la segunda aparición de '/' empezando desde la posición 1
   const char *segunda_barra = strchr(camino + 1, '/');
 
-  if (segunda_barra) {
-    // Hay más niveles (ej: /dir1/dir2)
+  if (segunda_barra != NULL) {
+    // --- CASO DIRECTORIO ---
+    // Ejemplo: "/dir1/fichero" o "/dir1/"
+
+    // Calculamos cuántos caracteres hay entre la primera y segunda barra
     int longitud = segunda_barra - (camino + 1);
+
     strncpy(inicial, camino + 1, longitud);
-    inicial[longitud] = '\0';
+    inicial[longitud] =
+        '\0'; // Importante: strncpy no añade el nulo si llega al límite
+
     strcpy(final, segunda_barra);
-    *tipo = 'd'; // Si hay algo después de la segunda barra, el inicial es un
-                 // directorio
+    *tipo = 'd';
   } else {
-    // Es el último nivel (ej: /archivo o /directorio/)
+    // --- CASO FICHERO (o último nivel) ---
+    // Ejemplo: "/fichero"
+
     strcpy(inicial, camino + 1);
-    strcpy(final, "");
-    if (camino[strlen(camino) - 1] == '/') {
-      *tipo = 'd';
-      inicial[strlen(inicial) - 1] = '\0'; // Quitar la barra final de inicial
-    } else {
-      *tipo = 'f';
-    }
+    strcpy(final, ""); // Cadena vacía
+    *tipo = 'f';
   }
+
   return EXITO;
 }
 int buscar_entrada(const char *camino_directorio, unsigned int *p_inodo_dir,
