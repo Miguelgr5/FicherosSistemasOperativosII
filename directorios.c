@@ -37,11 +37,14 @@ int buscar_entrada(const char *camino_directorio, unsigned int *p_inodo_dir,
                    unsigned int *p_inodo, unsigned int *p_entrada,
                    char reservar, unsigned char permisos) {
   struct inodo inodo_dir;
-  struct entrada entrada;
+  struct entrada
+      entradas[BLOCKSIZE /
+               sizeof(struct entrada)]; // Buffer para un bloque de entradas
   char inicial[TAMNOMBRE];
   char final[strlen(camino_directorio) + 1];
   char tipo;
   int num_entradas, n_entrada;
+  int error;
 
   memset(inicial, 0, TAMNOMBRE);
   memset(final, 0, strlen(camino_directorio) + 1);
@@ -53,7 +56,8 @@ int buscar_entrada(const char *camino_directorio, unsigned int *p_inodo_dir,
   }
 
   if (extraer_camino(camino_directorio, inicial, final, &tipo) == FALLO) {
-    return ERROR_CAMINO_INCORRECTO;
+    error = ERROR_CAMINO_INCORRECTO;
+    return error;
   }
 
 #if defined(DEBUGN7)
@@ -63,82 +67,109 @@ int buscar_entrada(const char *camino_directorio, unsigned int *p_inodo_dir,
 
   if (leer_inodo(*p_inodo_dir, &inodo_dir) == FALLO)
     return FALLO;
-  if ((inodo_dir.permisos & 4) == 0)
-    return ERROR_PERMISO_LECTURA;
+  if ((inodo_dir.permisos & 4) == 0) {
+    error = ERROR_PERMISO_LECTURA;
+    return error;
+  }
 
   num_entradas = inodo_dir.tamEnBytesLog / sizeof(struct entrada);
   n_entrada = 0;
 
+  // Lectura por bloques
   if (num_entradas > 0) {
-    if (mi_read_f(*p_inodo_dir, &entrada, n_entrada * sizeof(struct entrada),
-                  sizeof(struct entrada)) < 0)
-      return FALLO;
-    while (n_entrada < num_entradas && strcmp(inicial, entrada.nombre) != 0) {
-      n_entrada++;
-      if (n_entrada < num_entradas) {
-        if (mi_read_f(*p_inodo_dir, &entrada,
-                      n_entrada * sizeof(struct entrada),
-                      sizeof(struct entrada)) < 0)
+    while (n_entrada < num_entradas) {
+      // Si n_entrada es múltiplo de la cantidad de entradas que caben en un
+      // bloque, leemos el bloque
+      if (n_entrada % (BLOCKSIZE / sizeof(struct entrada)) == 0) {
+        if (mi_read_f(*p_inodo_dir, entradas,
+                      n_entrada * sizeof(struct entrada), BLOCKSIZE) < 0) {
           return FALLO;
+        }
       }
+
+      // Accedemos a la entrada correspondiente dentro del buffer usando el
+      // operador %
+      int indice_en_buffer = n_entrada % (BLOCKSIZE / sizeof(struct entrada));
+
+      if (strcmp(inicial, entradas[indice_en_buffer].nombre) == 0) {
+        // ¡Encontrado! Salimos del bucle
+        break;
+      }
+      n_entrada++;
     }
   }
 
   if (n_entrada == num_entradas) { // No existe la entrada
     switch (reservar) {
     case 0:
-      return ERROR_NO_EXISTE_ENTRADA_CONSULTA;
+      error = ERROR_NO_EXISTE_ENTRADA_CONSULTA;
+      return error;
     case 1:
-      if (inodo_dir.tipo != 'd')
-        return ERROR_NO_SE_PUEDE_CREAR_ENTRADA_EN_UN_FICHERO;
-      if ((inodo_dir.permisos & 2) == 0)
-        return ERROR_PERMISO_ESCRITURA;
+      if (inodo_dir.tipo != 'd') {
+        error = ERROR_NO_SE_PUEDE_CREAR_ENTRADA_EN_UN_FICHERO;
+        return error;
+      }
+      if ((inodo_dir.permisos & 2) == 0) {
+        error = ERROR_PERMISO_ESCRITURA;
+        return error;
+      }
 
-      strcpy(entrada.nombre, inicial);
+      struct entrada nueva_entrada;
+      strcpy(nueva_entrada.nombre, inicial);
       if (tipo == 'd') {
         if (strcmp(final, "/") == 0 || strcmp(final, "") == 0) {
-          entrada.ninodo = reservar_inodo('d', permisos);
+          nueva_entrada.ninodo = reservar_inodo('d', permisos);
 #if defined(DEBUGN7)
           fprintf(stderr,
                   "[buscar_entrada()→ reservado inodo %u tipo d con permisos "
                   "%u para %s]\n",
-                  entrada.ninodo, permisos, inicial);
+                  nueva_entrada.ninodo, permisos, inicial);
 #endif
         } else {
-          return ERROR_NO_EXISTE_DIRECTORIO_INTERMEDIO;
+          error = ERROR_NO_EXISTE_DIRECTORIO_INTERMEDIO;
+          return error;
         }
       } else {
-        entrada.ninodo = reservar_inodo('f', permisos);
+        nueva_entrada.ninodo = reservar_inodo('f', permisos);
 #if defined(DEBUGN7)
         fprintf(stderr,
                 "[buscar_entrada()→ reservado inodo %u tipo f con permisos %u "
                 "para %s]\n",
-                entrada.ninodo, permisos, inicial);
+                nueva_entrada.ninodo, permisos, inicial);
 #endif
       }
 
-      if (mi_write_f(*p_inodo_dir, &entrada, n_entrada * sizeof(struct entrada),
+      if (mi_write_f(*p_inodo_dir, &nueva_entrada,
+                     n_entrada * sizeof(struct entrada),
                      sizeof(struct entrada)) < 0) {
-        // Si falla la escritura, idealmente liberaríamos el inodo reservado
         return FALLO;
       }
 #if defined(DEBUGN7)
       fprintf(stderr, "[buscar_entrada()→ creada entrada: %s, %u]\n",
-              entrada.nombre, entrada.ninodo);
+              nueva_entrada.nombre, nueva_entrada.ninodo);
 #endif
-      break;
+      // Para que la parte final de la función funcione con la entrada recién
+      // creada
+      *p_inodo = nueva_entrada.ninodo;
+      *p_entrada = n_entrada;
+      return EXITO; // Salida directa tras crear
     }
   }
 
-  // Comprobar si hemos terminado la ruta
+  // Si hemos terminado la ruta
   if (strcmp(final, "") == 0 || strcmp(final, "/") == 0) {
-    if (n_entrada < num_entradas && reservar == 1)
-      return ERROR_ENTRADA_YA_EXISTENTE;
-    *p_inodo = entrada.ninodo;
+    if (n_entrada < num_entradas && reservar == 1) {
+      error = ERROR_ENTRADA_YA_EXISTENTE;
+      return error;
+    }
+    // Obtenemos el inodo de la entrada encontrada en el buffer
+    *p_inodo =
+        entradas[n_entrada % (BLOCKSIZE / sizeof(struct entrada))].ninodo;
     *p_entrada = n_entrada;
     return EXITO;
   } else {
-    *p_inodo_dir = entrada.ninodo;
+    *p_inodo_dir =
+        entradas[n_entrada % (BLOCKSIZE / sizeof(struct entrada))].ninodo;
     return buscar_entrada(final, p_inodo_dir, p_inodo, p_entrada, reservar,
                           permisos);
   }
