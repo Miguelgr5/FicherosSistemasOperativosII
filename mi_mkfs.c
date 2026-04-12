@@ -1,5 +1,5 @@
 #include "directorios.h"
-
+// #define DEBUG1
 int main(int argc, char *argv[]) {
 
   // 1️⃣ Validación de argumentos
@@ -21,9 +21,9 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, RED "Error: No se pudo montar el dispositivo.\n" RESET);
     return EXIT_FAILURE;
   }
-
+#if defined(DEBUG1)
   printf("Formateando %d bloques con nivel 1...\n", bloques);
-
+#endif
   // 3️⃣ Inicializar superbloque
   if (initSB(bloques, bloques / 4) == FALLO) { // ej: 1 inodo por 4 bloques
     fprintf(stderr, RED "Error inicializando superbloque.\n" RESET);

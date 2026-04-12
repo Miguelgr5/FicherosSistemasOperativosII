@@ -245,6 +245,7 @@ int reservar_inodo(unsigned char tipo, unsigned char permisos) {
   inodoAux.atime = time(NULL);
   inodoAux.mtime = time(NULL);
   inodoAux.ctime = time(NULL);
+  inodoAux.btime = time(NULL);
   inodoAux.numBloquesOcupados = 0;
 
   for (int i = 0; i < 12; i++) {

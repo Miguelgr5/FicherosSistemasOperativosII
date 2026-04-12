@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
   printf("tipo=%c\n", inodo.tipo);
   printf("permisos=%u\n", inodo.permisos);
 
-  char atime[80], mtime[80], ctime[80];
+  char atime[80], mtime[80], ctime[80], btime[80];
   struct tm *ts;
   ts = localtime(&inodo.atime);
   strftime(atime, sizeof(atime), "%a %Y-%m-%d %H:%M:%S", ts);
@@ -50,10 +50,13 @@ int main(int argc, char *argv[]) {
   strftime(mtime, sizeof(mtime), "%a %Y-%m-%d %H:%M:%S", ts);
   ts = localtime(&inodo.ctime);
   strftime(ctime, sizeof(ctime), "%a %Y-%m-%d %H:%M:%S", ts);
+  ts = localtime(&inodo.btime);
+  strftime(btime, sizeof(btime), "%a %Y-%m-%d %H:%M:%S", ts);
 
   printf("atime: %s\n", atime);
   printf("mtime: %s\n", mtime);
   printf("ctime: %s\n", ctime);
+  printf("btime: %s\n", btime);
   printf("nlinks=%u\n", inodo.nlinks);
   printf("tamEnBytesLog=%u\n", inodo.tamEnBytesLog);
   printf("numBloquesOcupados=%u\n", inodo.numBloquesOcupados);
