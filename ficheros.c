@@ -194,9 +194,7 @@ int mi_stat_f(unsigned int ninodo, struct STAT *p_stat) {
   p_stat->mtime = inodo.mtime;
   p_stat->ctime = inodo.ctime;
 
-  // Nota: Si tu struct inodo no tiene btime (birth time),
-  // puedes usar el ctime o inicializarlo según tu diseño previo.
-  p_stat->btime = inodo.ctime;
+  p_stat->btime = inodo.btime;
 
   p_stat->nlinks = inodo.nlinks;
   p_stat->tamEnBytesLog = inodo.tamEnBytesLog;
