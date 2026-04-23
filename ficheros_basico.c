@@ -392,10 +392,12 @@ int traducir_bloque_inodo(unsigned int ninodo, unsigned int nblogico,
       buffer[indice] = ptr;
       if (bwrite(ptr_ant, buffer) == FALLO)
         return FALLO;
+#if defined(DEBUG4)
       fprintf(stderr,
               "[traducir_bloque_inodo()→ punteros_nivel1 [%u] = %u (reservado "
               "BF %u para BL %u)]\n",
               indice, ptr, ptr, nblogico);
+#endif
     }
   }
 

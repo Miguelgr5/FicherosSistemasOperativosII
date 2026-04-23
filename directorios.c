@@ -1,5 +1,6 @@
 #include "directorios.h"
-#define DEBUGN7
+// #define DEBUGN7
+#define DEBUGN9
 int extraer_camino(const char *camino, char *inicial, char *final, char *tipo) {
   // Verificación de seguridad básica
   if (camino == NULL || camino[0] != '/') {
@@ -392,4 +393,155 @@ int mi_touch(const char *camino, unsigned char permisos) {
   }
 
   return 0;
+}
+#define USARCACHE 3 // 3: tabla LRU
+#define CACHE_SIZE 3
+#if (USARCACHE == 2 || USARCACHE == 3)
+static struct UltimaEntrada UltimasEntradas[CACHE_SIZE];
+static int inicializada = 0; // Para limpiar la caché la primera vez
+#endif
+int mi_write(const char *camino, const void *buf, unsigned int offset,
+             unsigned int nbytes) {
+  unsigned int p_inodo_dir = 0;
+  unsigned int p_inodo_fichero = 0;
+  unsigned int p_entrada = 0;
+  int error;
+  int indice_cache = -1;
+
+  // 1. Inicialización de la caché (solo la primera vez)
+  if (!inicializada) {
+    for (int i = 0; i < CACHE_SIZE; i++) {
+      memset(UltimasEntradas[i].camino, 0, sizeof(UltimasEntradas[i].camino));
+      UltimasEntradas[i].p_inodo = -1;
+    }
+    inicializada = 1;
+  }
+
+  // 2. BUSCAR EN CACHÉ (Estrategia LRU)
+  for (int i = 0; i < CACHE_SIZE; i++) {
+    if (strcmp(UltimasEntradas[i].camino, camino) == 0) {
+      indice_cache = i;
+      p_inodo_fichero = UltimasEntradas[i].p_inodo;
+      break;
+    }
+  }
+
+  if (indice_cache != -1) {
+    // HIT: Actualizamos el sello de tiempo para LRU
+    gettimeofday(&UltimasEntradas[indice_cache].ultima_consulta, NULL);
+    // printf("[mi_write() -> Hit en caché: %s]\n", camino);
+  } else {
+    // MISS: No está en caché, hay que buscarlo en el disco
+    if ((error = buscar_entrada(camino, &p_inodo_dir, &p_inodo_fichero,
+                                &p_entrada, 0, 0)) < 0) {
+      return error; // Error gestionado por buscar_entrada
+    }
+
+    // 3. ACTUALIZAR CACHÉ (Reemplazo LRU)
+    int pos_a_reemplazar = 0;
+    struct timeval min_time;
+    gettimeofday(&min_time, NULL); // Inicializar con el tiempo actual
+
+    for (int i = 0; i < CACHE_SIZE; i++) {
+      // Si hay un hueco libre, lo usamos
+      if (UltimasEntradas[i].p_inodo == -1) {
+        pos_a_reemplazar = i;
+        break;
+      }
+      // Si no, buscamos el que tenga el tiempo más antiguo
+      if (UltimasEntradas[i].ultima_consulta.tv_sec < min_time.tv_sec ||
+          (UltimasEntradas[i].ultima_consulta.tv_sec == min_time.tv_sec &&
+           UltimasEntradas[i].ultima_consulta.tv_usec < min_time.tv_usec)) {
+        min_time = UltimasEntradas[i].ultima_consulta;
+        pos_a_reemplazar = i;
+      }
+    }
+#if defined(DEBUGN9)
+    fprintf(stderr,
+            ORANGE "[mi_write() → Actualizamos la caché de escritura]\n" RESET);
+#endif
+    // Insertar en la posición elegida
+    strcpy(UltimasEntradas[pos_a_reemplazar].camino, camino);
+    UltimasEntradas[pos_a_reemplazar].p_inodo = p_inodo_fichero;
+    gettimeofday(&UltimasEntradas[pos_a_reemplazar].ultima_consulta, NULL);
+  }
+
+  // 4. ESCRITURA REAL
+  // Llamamos a la capa de ficheros usando el inodo obtenido
+  return mi_write_f(p_inodo_fichero, buf, offset, nbytes);
+}
+int mi_read(const char *camino, void *buf, unsigned int offset,
+            unsigned int nbytes) {
+  unsigned int p_inodo_dir = 0;
+  unsigned int p_inodo_fichero = 0;
+  unsigned int p_entrada = 0;
+  int error;
+  int indice_cache = -1;
+
+  // 1. BUSCAR EN CACHÉ
+  for (int i = 0; i < CACHE_SIZE; i++) {
+    if (strcmp(UltimasEntradas[i].camino, camino) == 0) {
+      indice_cache = i;
+      p_inodo_fichero = UltimasEntradas[i].p_inodo;
+      break;
+    }
+  }
+
+  if (indice_cache != -1) {
+// HIT: El camino ya está en la caché
+#if (defined(DEBUGN9))
+    fprintf(stderr,
+            BLUE "[mi_read() → Utilizamos la caché de lectura en vez de "
+                 "llamar a buscar_entrada()]\n" RESET);
+#endif
+
+#if USARCACHE == 3
+    gettimeofday(&UltimasEntradas[indice_cache].ultima_consulta, NULL);
+#endif
+  } else {
+    // MISS: No está en caché, hay que buscarlo en el dispositivo
+    if ((error = buscar_entrada(camino, &p_inodo_dir, &p_inodo_fichero,
+                                &p_entrada, 0, 0)) < 0) {
+      return error;
+    }
+
+    // 2. ACTUALIZAR CACHÉ (Estrategia LRU)
+    int pos_a_reemplazar = 0;
+#if USARCACHE == 3
+    struct timeval min_time;
+    // Obtenemos el tiempo actual para comparar
+    gettimeofday(&min_time, NULL);
+
+    for (int i = 0; i < CACHE_SIZE; i++) {
+      if (UltimasEntradas[i].p_inodo == -1) { // Hueco libre (caché no llena)
+        pos_a_reemplazar = i;
+        break;
+      }
+      // Buscamos la entrada con el timestamp más pequeño (la más antigua)
+      if (UltimasEntradas[i].ultima_consulta.tv_sec < min_time.tv_sec ||
+          (UltimasEntradas[i].ultima_consulta.tv_sec == min_time.tv_sec &&
+           UltimasEntradas[i].ultima_consulta.tv_usec < min_time.tv_usec)) {
+        min_time = UltimasEntradas[i].ultima_consulta;
+        pos_a_reemplazar = i;
+      }
+    }
+#else
+    static int siguiente_fifo = 0;
+    pos_a_reemplazar = siguiente_fifo;
+    siguiente_fifo = (siguiente_fifo + 1) % CACHE_SIZE;
+#endif
+#if defined(DEBUGN9)
+    fprintf(stderr,
+            ORANGE "[mi_read() → Actualizamos la caché de lectura]\n" RESET);
+#endif
+    strcpy(UltimasEntradas[pos_a_reemplazar].camino, camino);
+    UltimasEntradas[pos_a_reemplazar].p_inodo = p_inodo_fichero;
+
+#if USARCACHE == 3
+    gettimeofday(&UltimasEntradas[pos_a_reemplazar].ultima_consulta, NULL);
+#endif
+  }
+
+  // 3. LECTURA REAL
+  return mi_read_f(p_inodo_fichero, buf, offset, nbytes);
 }

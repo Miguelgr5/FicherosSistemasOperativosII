@@ -2,7 +2,7 @@
 // #define DEBUGN2
 // #define DEBUGN3
 // #define DEBUGN4
-#define DEBUGN7
+// #define DEBUGN7
 void mostrar_buscar_entrada(char *camino, char reservar) {
   unsigned int p_inodo_dir = 0;
   unsigned int p_inodo = 0;
