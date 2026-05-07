@@ -8,6 +8,7 @@
 #define ERROR_ENTRADA_YA_EXISTENTE (-7)
 #define ERROR_NO_SE_PUEDE_CREAR_ENTRADA_EN_UN_FICHERO (-8)
 #include "ficheros.h"
+#include "semaforo_mutex_posix.h"
 #include "string.h"
 #include "sys/time.h"
 struct entrada {

@@ -3,6 +3,24 @@
 #include <stdio.h>
 // #define DEBUG
 static int descriptor;
+static sem_t *mutex;
+static unsigned int inside_sc = 0; // Control de reentrada
+// Función para solicitar el semáforo
+void mi_waitSem() {
+  if (!inside_sc) { // Si inside_sc == 0, no se ha hecho un wait todavía
+    waitSem(mutex);
+  }
+  inside_sc++; // Incrementamos para saber que ya estamos dentro de una sección
+               // crítica
+}
+// Función para liberar el semáforo
+void mi_signalSem() {
+  inside_sc--;      // Decrementamos al salir de una función
+  if (!inside_sc) { // Solo si es el último nivel de salida, liberamos el
+                    // semáforo real
+    signalSem(mutex);
+  }
+}
 int bmount(const char *camino) {
   umask(0000);
   descriptor = open(camino, O_RDWR | O_CREAT, 0666);
@@ -12,9 +30,17 @@ int bmount(const char *camino) {
     fprintf(stderr, RESET);
     return FALLO;
   }
+  if (!mutex) {        // El semáforo es único y solo se inicializa una vez
+    mutex = initSem(); // Llama a sem_open() internamente
+    if (mutex == SEM_FAILED) {
+      return FALLO; // Error si no se puede crear el semáforo
+    }
+  }
   return descriptor;
 }
 int bumount() {
+  deleteSem();
+  mutex = NULL; // Evitamos punteros colgantes
   if (close(descriptor) < 0) {
     fprintf(stderr, RED "Error al cerrar archivo: ");
     perror("");
