@@ -17,7 +17,7 @@ int mi_write_f(unsigned int ninodo, const void *buf_original,
     fprintf(stderr, RED "No hay permisos de escritura\n" RESET);
     return FALLO;
   }
-
+  unsigned int nbloques_inicial = inodo.numBloquesOcupados;
   // 2. Cálculos de bloques lógicos y desplazamientos
   unsigned int primerBL = offset / BLOCKSIZE;
   unsigned int ultimoBL = (offset + nbytes - 1) / BLOCKSIZE;
@@ -98,13 +98,21 @@ int mi_write_f(unsigned int ninodo, const void *buf_original,
     mi_signalSem();
     return FALLO;
   }
+
+  inodo.mtime = time(NULL);
+  int modificado = 0;
+
   // Solo actualizamos el tamaño si hemos escrito más allá del EOF
   if (offset + nbytes > inodo.tamEnBytesLog) {
     inodo.tamEnBytesLog = offset + nbytes;
+    modificado = 1;
   }
 
-  inodo.mtime = time(NULL);
-  inodo.ctime = time(NULL);
+  if (inodo.numBloquesOcupados != nbloques_inicial)
+    modificado = 1;
+
+  if (modificado)
+    inodo.ctime = time(NULL);
 
   if (escribir_inodo(ninodo, &inodo) == FALLO) {
     mi_signalSem();
