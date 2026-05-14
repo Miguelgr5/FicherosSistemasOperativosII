@@ -1,6 +1,7 @@
 #include "directorios.h"
 // #define DEBUGN7
-#define DEBUGN9
+// #define DEBUGN9
+#define DEBUGCACHE
 int extraer_camino(const char *camino, char *inicial, char *final, char *tipo) {
   // Verificación de seguridad básica
   if (camino == NULL || camino[0] != '/') {
@@ -118,7 +119,7 @@ int buscar_entrada(const char *camino_directorio, unsigned int *p_inodo_dir,
       struct entrada nueva_entrada;
       strcpy(nueva_entrada.nombre, inicial);
       if (tipo == 'd') {
-        if (strcmp(final, "/") == 0 || strcmp(final, "") == 0) {
+        if (strcmp(final, "/") == 0) {
           nueva_entrada.ninodo = reservar_inodo('d', permisos);
 #if defined(DEBUGN7)
           fprintf(stderr,
@@ -158,7 +159,7 @@ int buscar_entrada(const char *camino_directorio, unsigned int *p_inodo_dir,
   }
 
   // Si hemos terminado la ruta
-  if (strcmp(final, "") == 0 || strcmp(final, "/") == 0) {
+  if (strcmp(final, "") == 0) {
     if (n_entrada < num_entradas && reservar == 1) {
       error = ERROR_ENTRADA_YA_EXISTENTE;
       return error;
@@ -397,21 +398,17 @@ int mi_touch(const char *camino, unsigned char permisos) {
 
   return 0;
 }
-#define USARCACHE 3 // 3: tabla LRU
+#define USARCACHE 3 // 3: tabla LRU 2:FIFO
 #define CACHE_SIZE 3
 #if (USARCACHE == 2 || USARCACHE == 3)
 static struct UltimaEntrada UltimasEntradas[CACHE_SIZE];
 static int inicializada = 0; // Para limpiar la caché la primera vez
+#if USARCACHE == 2
+static int siguiente_fifo = 0;
 #endif
-int mi_write(const char *camino, const void *buf, unsigned int offset,
-             unsigned int nbytes) {
-  unsigned int p_inodo_dir = 0;
-  unsigned int p_inodo_fichero = 0;
-  unsigned int p_entrada = 0;
-  int error;
-  int indice_cache = -1;
+#endif
 
-  // 1. Inicialización de la caché (solo la primera vez)
+void inicializar_cache() {
   if (!inicializada) {
     for (int i = 0; i < CACHE_SIZE; i++) {
       memset(UltimasEntradas[i].camino, 0, sizeof(UltimasEntradas[i].camino));
@@ -419,8 +416,18 @@ int mi_write(const char *camino, const void *buf, unsigned int offset,
     }
     inicializada = 1;
   }
+}
 
-  // 2. BUSCAR EN CACHÉ (Estrategia LRU)
+int mi_write(const char *camino, const void *buf, unsigned int offset,
+             unsigned int nbytes) {
+  unsigned int p_inodo_dir = 0;
+  unsigned int p_inodo_fichero = 0;
+  unsigned int p_entrada = 0;
+  int error;
+  int indice_cache = -1;
+  // 1. INICIALIZAR CACHE
+  inicializar_cache();
+  //  2. BUSCAR EN CACHÉ (Estrategia LRU)
   for (int i = 0; i < CACHE_SIZE; i++) {
     if (strcmp(UltimasEntradas[i].camino, camino) == 0) {
       indice_cache = i;
@@ -430,9 +437,16 @@ int mi_write(const char *camino, const void *buf, unsigned int offset,
   }
 
   if (indice_cache != -1) {
+#if USARCACHE == 3
     // HIT: Actualizamos el sello de tiempo para LRU
     gettimeofday(&UltimasEntradas[indice_cache].ultima_consulta, NULL);
-    // printf("[mi_write() -> Hit en caché: %s]\n", camino);
+#endif
+
+#if defined(DEBUGCACHE)
+    fprintf(stderr, "[mi_write() → Utilizamos cache[%d]: %s]\n", indice_cache,
+            camino);
+#endif
+
   } else {
     // MISS: No está en caché, hay que buscarlo en el disco
     if ((error = buscar_entrada(camino, &p_inodo_dir, &p_inodo_fichero,
@@ -442,6 +456,7 @@ int mi_write(const char *camino, const void *buf, unsigned int offset,
 
     // 3. ACTUALIZAR CACHÉ (Reemplazo LRU)
     int pos_a_reemplazar = 0;
+#if USARCACHE == 3
     struct timeval min_time;
     gettimeofday(&min_time, NULL); // Inicializar con el tiempo actual
 
@@ -459,14 +474,24 @@ int mi_write(const char *camino, const void *buf, unsigned int offset,
         pos_a_reemplazar = i;
       }
     }
+#else
+    pos_a_reemplazar = siguiente_fifo;
+    siguiente_fifo = (siguiente_fifo + 1) % CACHE_SIZE;
+#endif
 #if defined(DEBUGN9)
     fprintf(stderr,
             ORANGE "[mi_write() → Actualizamos la caché de escritura]\n" RESET);
 #endif
+#if defined(DEBUGCACHE)
+    fprintf(stderr, "[mi_write() → Reemplazamos cache[%d]: %s]\n",
+            pos_a_reemplazar, camino);
+#endif
     // Insertar en la posición elegida
     strcpy(UltimasEntradas[pos_a_reemplazar].camino, camino);
     UltimasEntradas[pos_a_reemplazar].p_inodo = p_inodo_fichero;
+#if USARCACHE == 3
     gettimeofday(&UltimasEntradas[pos_a_reemplazar].ultima_consulta, NULL);
+#endif
   }
   // 4. ESCRITURA REAL
   // Llamamos a la capa de ficheros usando el inodo obtenido
@@ -479,8 +504,10 @@ int mi_read(const char *camino, void *buf, unsigned int offset,
   unsigned int p_entrada = 0;
   int error;
   int indice_cache = -1;
+  // 1. INICIALIZAR CACHÉ
+  inicializar_cache();
 
-  // 1. BUSCAR EN CACHÉ
+  // 2. BUSCAR EN CACHÉ
   for (int i = 0; i < CACHE_SIZE; i++) {
     if (strcmp(UltimasEntradas[i].camino, camino) == 0) {
       indice_cache = i;
@@ -490,10 +517,10 @@ int mi_read(const char *camino, void *buf, unsigned int offset,
   }
 
   if (indice_cache != -1) {
-#if (defined(DEBUGN9))
-    fprintf(stderr,
-            BLUE "[mi_read() → Utilizamos la caché de lectura en vez de "
-                 "llamar a buscar_entrada()]\n" RESET);
+#if (defined(DEBUGCACHE))
+    fprintf(stderr, "[mi_read() → Utilizamos cache[%d]: %s]\n", indice_cache,
+            camino);
+
 #endif
 
 #if USARCACHE == 3
@@ -527,13 +554,16 @@ int mi_read(const char *camino, void *buf, unsigned int offset,
       }
     }
 #else
-    static int siguiente_fifo = 0;
     pos_a_reemplazar = siguiente_fifo;
     siguiente_fifo = (siguiente_fifo + 1) % CACHE_SIZE;
 #endif
 #if defined(DEBUGN9)
     fprintf(stderr,
             ORANGE "[mi_read() → Actualizamos la caché de lectura]\n" RESET);
+#endif
+#if defined(DEBUGCACHE)
+    fprintf(stderr, "[mi_read() → Reemplazamos cache[%d]: %s]\n",
+            pos_a_reemplazar, camino);
 #endif
     strcpy(UltimasEntradas[pos_a_reemplazar].camino, camino);
     UltimasEntradas[pos_a_reemplazar].p_inodo = p_inodo_fichero;
