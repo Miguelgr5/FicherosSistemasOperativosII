@@ -16,8 +16,12 @@ sem_t *initSem() {
   return sem;
 }
 
-void deleteSem() { sem_unlink(SEM_NAME); }
+void deleteSem(sem_t *sem) {
 
+  if (sem_close(sem) == -1) {
+    perror("Error deleteSem()");
+  }
+}
 void signalSem(sem_t *sem) { sem_post(sem); }
 
 void waitSem(sem_t *sem) { sem_wait(sem); }

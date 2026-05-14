@@ -39,7 +39,7 @@ int bmount(const char *camino) {
   return descriptor;
 }
 int bumount() {
-  deleteSem();
+  deleteSem(mutex);
   mutex = NULL; // Evitamos punteros colgantes
   if (close(descriptor) < 0) {
     fprintf(stderr, RED "Error al cerrar archivo: ");
