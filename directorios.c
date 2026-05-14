@@ -1,7 +1,7 @@
 #include "directorios.h"
 // #define DEBUGN7
 // #define DEBUGN9
-#define DEBUGCACHE
+// #define DEBUGCACHE
 int extraer_camino(const char *camino, char *inicial, char *final, char *tipo) {
   // Verificación de seguridad básica
   if (camino == NULL || camino[0] != '/') {
