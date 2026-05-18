@@ -22,7 +22,6 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Uso: ./simulacion <disco>\n");
     exit(1);
   }
-
   // 2. Preparar enterrador de hijos
   signal(SIGCHLD, reaper);
 
