@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
     bumount();
     exit(1);
   }
-
+  printf("%d", stat_simul.tamEnBytesLog);
   int num_entradas = stat_simul.tamEnBytesLog / sizeof(struct entrada);
   printf("Debug: tamEnBytesLog del directorio = %u\n",
          stat_simul.tamEnBytesLog);
@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
     }
 
     // 6. Preparar la salida por pantalla y para el fichero informe.txt
-    char buffer[1024];
+    char buffer[3500];
     char fecha_p[26], fecha_u[26], fecha_menor[26], fecha_mayor[26];
 
     strcpy(fecha_p, ctime(&info.PrimeraEscritura.fecha));

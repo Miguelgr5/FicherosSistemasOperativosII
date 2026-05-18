@@ -12,22 +12,30 @@ int extraer_camino(const char *camino, char *inicial, char *final, char *tipo) {
   const char *segunda_barra = strchr(camino + 1, '/');
 
   if (segunda_barra != NULL) {
-    // --- CASO DIRECTORIO ---
-    // Ejemplo: "/dir1/fichero" o "/dir1/"
+    // Si la segunda barra es literalmente el último carácter de la ruta (ej:
+    // "/dir/")
+    if (*(segunda_barra + 1) == '\0') {
+      // Se trata del último nivel (un directorio)
+      strcpy(inicial, camino + 1);
+      // Eliminamos la barra final del nombre en 'inicial'
+      inicial[strlen(inicial) - 1] = '\0';
 
-    // Calculamos cuántos caracteres hay entre la primera y segunda barra
-    int longitud = segunda_barra - (camino + 1);
+      strcpy(final, ""); // No quedan más niveles intermedios
+      *tipo = 'd';       // Sigue siendo un directorio
+    } else {
+      // --- CASO DIRECTIORIO INTERMEDIO ---
+      // Ejemplo: "/dir1/fichero" o "/dir1/dir2/"
+      int longitud = segunda_barra - (camino + 1);
 
-    strncpy(inicial, camino + 1, longitud);
-    inicial[longitud] =
-        '\0'; // Importante: strncpy no añade el nulo si llega al límite
+      strncpy(inicial, camino + 1, longitud);
+      inicial[longitud] = '\0'; // Aseguramos el cierre de cadena
 
-    strcpy(final, segunda_barra);
-    *tipo = 'd';
+      strcpy(final, segunda_barra);
+      *tipo = 'd';
+    }
   } else {
-    // --- CASO FICHERO (o último nivel) ---
+    // --- CASO FICHERO ---
     // Ejemplo: "/fichero"
-
     strcpy(inicial, camino + 1);
     strcpy(final, ""); // Cadena vacía
     *tipo = 'f';
@@ -119,7 +127,7 @@ int buscar_entrada(const char *camino_directorio, unsigned int *p_inodo_dir,
       struct entrada nueva_entrada;
       strcpy(nueva_entrada.nombre, inicial);
       if (tipo == 'd') {
-        if (strcmp(final, "/") == 0) {
+        if (strcmp(final, "") == 0 || strcmp(final, "/") == 0) {
           nueva_entrada.ninodo = reservar_inodo('d', permisos);
 #if defined(DEBUGN7)
           fprintf(stderr,
@@ -159,7 +167,7 @@ int buscar_entrada(const char *camino_directorio, unsigned int *p_inodo_dir,
   }
 
   // Si hemos terminado la ruta
-  if (strcmp(final, "") == 0) {
+  if (strcmp(final, "") == 0 || strcmp(final, "/") == 0) {
     if (n_entrada < num_entradas && reservar == 1) {
       error = ERROR_ENTRADA_YA_EXISTENTE;
       return error;
@@ -236,7 +244,8 @@ int mi_dir(const char *camino, char *buffer, char tipo, char flag) {
     return -1;
   }
   if (inodo.tipo != tipo) {
-    fprintf(stderr, "Error: la sintaxis no concuerda con el tipo.\n");
+    fprintf(stderr, "/simul_20260518084255/proceso_21813/prueba.datError: la "
+                    "sintaxis no concuerda con el tipo.\n");
     return -1;
   }
 
