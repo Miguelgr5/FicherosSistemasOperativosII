@@ -121,6 +121,7 @@ int mi_write_f(unsigned int ninodo, const void *buf_original,
   mi_signalSem();
   return escritos;
 }
+
 int mi_read_f(unsigned int ninodo, void *buf_original, unsigned int offset,
               unsigned int nbytes) {
   mi_waitSem();
@@ -151,7 +152,16 @@ int mi_read_f(unsigned int ninodo, void *buf_original, unsigned int offset,
              offset; // Ajustamos para no leer más allá del tamaño real
   }
 
-  // 4. Preparación de variables para el bucle de lectura
+  // 4. Actualizar atime y guardar inodo, modificamos atime antes de lectura
+  // para dejar el semaforo lo antes posible
+  inodo.atime = time(NULL);
+  if (escribir_inodo(ninodo, &inodo) == FALLO) {
+    mi_signalSem();
+    return FALLO;
+  }
+
+  mi_signalSem();
+  // 5. Preparación de variables para el bucle de lectura
   unsigned int primer_BL = offset / BLOCKSIZE;
   unsigned int ultimo_BL = (offset + nbytes - 1) / BLOCKSIZE;
   unsigned int desp1 = offset % BLOCKSIZE;
@@ -160,13 +170,12 @@ int mi_read_f(unsigned int ninodo, void *buf_original, unsigned int offset,
   unsigned char buf_bloque[BLOCKSIZE];
   int nbfisico;
 
-  // 5. Bucle de lectura bloque a bloque
+  // 6. Bucle de lectura bloque a bloque
   // Caso A: La lectura cabe en un solo bloque
   if (primer_BL == ultimo_BL) {
     nbfisico = traducir_bloque_inodo(ninodo, primer_BL, 0); // reservar = 0
     if (nbfisico != FALLO) {
       if (bread(nbfisico, buf_bloque) == FALLO) {
-        mi_signalSem();
         return FALLO;
       }
       memcpy(buf_original, buf_bloque + desp1, nbytes);
@@ -174,23 +183,21 @@ int mi_read_f(unsigned int ninodo, void *buf_original, unsigned int offset,
     leidos = nbytes;
   } else {
     // Caso B: La lectura abarca varios bloques
-    // 5.1. Primer bloque
+    // 6.1. Primer bloque
     nbfisico = traducir_bloque_inodo(ninodo, primer_BL, 0);
     if (nbfisico != FALLO) {
       if (bread(nbfisico, buf_bloque) == FALLO) {
-        mi_signalSem();
         return FALLO;
       }
       memcpy(buf_original, buf_bloque + desp1, BLOCKSIZE - desp1);
     }
     leidos = BLOCKSIZE - desp1;
 
-    // 5.2. Bloques intermedios
+    // 6.2. Bloques intermedios
     for (int bl = primer_BL + 1; bl < ultimo_BL; bl++) {
       nbfisico = traducir_bloque_inodo(ninodo, bl, 0);
       if (nbfisico != FALLO) {
         if (bread(nbfisico, buf_bloque) == FALLO) {
-          mi_signalSem();
           return FALLO;
         }
         memcpy(buf_original + leidos, buf_bloque, BLOCKSIZE);
@@ -198,11 +205,10 @@ int mi_read_f(unsigned int ninodo, void *buf_original, unsigned int offset,
       leidos += BLOCKSIZE;
     }
 
-    // 5.3. Último bloque
+    // 6.3. Último bloque
     nbfisico = traducir_bloque_inodo(ninodo, ultimo_BL, 0);
     if (nbfisico != FALLO) {
       if (bread(nbfisico, buf_bloque) == FALLO) {
-        mi_signalSem();
         return FALLO;
       }
       memcpy(buf_original + leidos, buf_bloque, desp2 + 1);
@@ -210,13 +216,6 @@ int mi_read_f(unsigned int ninodo, void *buf_original, unsigned int offset,
     leidos += (desp2 + 1);
   }
 
-  // 6. Actualizar atime y guardar inodo
-  inodo.atime = time(NULL);
-  if (escribir_inodo(ninodo, &inodo) == FALLO) {
-    mi_signalSem();
-    return FALLO;
-  }
-  mi_signalSem();
   return leidos;
 }
 int mi_stat_f(unsigned int ninodo, struct STAT *p_stat) {
