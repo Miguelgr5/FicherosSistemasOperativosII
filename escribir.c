@@ -1,4 +1,3 @@
-// Autores: Miguel Amengual Baldó,Xavi García Lladó y Miguel García García.
 #include "ficheros.h"
 #include <stdio.h>
 
