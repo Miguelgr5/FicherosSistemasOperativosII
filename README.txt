@@ -1,1 +1,1 @@
-Simuladoción sistema de ficheros Linux
+Simulación sistema de ficheros Linux
